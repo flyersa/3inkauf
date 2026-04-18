@@ -44,9 +44,12 @@ async def auto_sort(
     if not items or not categories:
         return AutoSortResponse(assignments=[])
 
-    # Load user's sorting hints
+    # Load hints for THIS list only
     hints_result = await session.execute(
-        select(SortingHint).where(SortingHint.user_id == current_user.id)
+        select(SortingHint).where(
+            SortingHint.user_id == current_user.id,
+            SortingHint.list_id == list_id,
+        )
     )
     hints = {h.item_name: h.category_name for h in hints_result.scalars().all()}
 
@@ -110,7 +113,7 @@ async def save_sorting_hints(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Save current item->category mappings as sorting hints for future auto-sort."""
+    """Save current item->category mappings as hints for THIS list."""
     await get_list_with_access(list_id, current_user, session)
 
     result = await session.execute(
@@ -126,6 +129,7 @@ async def save_sorting_hints(
         existing = await session.execute(
             select(SortingHint).where(
                 SortingHint.user_id == current_user.id,
+                SortingHint.list_id == list_id,
                 SortingHint.item_name == item_name_lower,
             )
         )
@@ -136,6 +140,7 @@ async def save_sorting_hints(
         else:
             hint = SortingHint(
                 user_id=current_user.id,
+                list_id=list_id,
                 item_name=item_name_lower,
                 category_name=category.name,
             )

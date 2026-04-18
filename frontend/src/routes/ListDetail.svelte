@@ -327,7 +327,8 @@
     {#if shares.length > 0}
       <div class="flex flex-wrap gap-2 mb-4 text-xs">
         {#if currentUser}<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background-color: {currentUser.color}"></span>{currentUser.display_name}</span>{/if}
-        {#each shares as share}<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background-color: {share.user_color}"></span>{share.user_display_name}</span>{/each}
+        {#if list && !list.is_owner && list.owner_display_name}<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background-color: {list.owner_color}"></span>{list.owner_display_name}</span>{/if}
+        {#each shares.filter(s => !currentUser || s.user_id !== currentUser.id) as share}<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background-color: {share.user_color}"></span>{share.user_display_name}</span>{/each}
       </div>
     {/if}
 

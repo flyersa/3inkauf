@@ -12,6 +12,7 @@
   import ListOverview from './routes/ListOverview.svelte';
   import ListDetail from './routes/ListDetail.svelte';
   import Settings from './routes/Settings.svelte';
+  import BonusCards from './routes/BonusCards.svelte';
 
   function authGuard() {
     if (!isLoggedIn()) {
@@ -29,6 +30,7 @@
     '/': wrap({ component: ListOverview, conditions: [authGuard] }),
     '/list/:id': wrap({ component: ListDetail, conditions: [authGuard] }),
     '/settings': wrap({ component: Settings, conditions: [authGuard] }),
+    '/bonus-cards': wrap({ component: BonusCards, conditions: [authGuard] }),
   };
 
   let online = $state(navigator.onLine);

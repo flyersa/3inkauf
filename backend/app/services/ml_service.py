@@ -50,7 +50,7 @@ class MLService:
         hints: Optional[dict] = None,
         threshold: float = 0.25,
     ) -> list[dict]:
-        """Simple mode: hints → substring → fastembed embeddings."""
+        """Simple mode: hints -> substring -> fastembed embeddings."""
         if not self.model or not items or not categories:
             return []
         if hints is None:
@@ -109,7 +109,7 @@ class MLService:
         ollama_url: str = "",
         ollama_model: str = "gemma3:4b",
     ) -> list[dict]:
-        """Advanced mode: hints → substring → Ollama LLM for remaining items."""
+        """Advanced mode: hints -> substring -> Ollama LLM for remaining items."""
         if not items or not categories:
             return []
         if hints is None:
@@ -134,7 +134,7 @@ class MLService:
             else:
                 llm_items.append(item)
 
-        # Step 2: send remaining items to Ollama
+        # Step 2: send remaining items to Ollama (chat API)
         if llm_items and ollama_url:
             cat_names = [c["name"] for c in categories]
             cat_map = {}
@@ -144,36 +144,33 @@ class MLService:
             item_names = [i["name"] for i in llm_items]
             cat_list = "\n".join(f"- {c}" for c in cat_names)
 
-            prompt = f"""You must sort grocery items into categories. Use ONLY the exact category names listed below.
-
-CATEGORIES (use these exact names):
-{cat_list}
-
-ITEMS TO SORT:
-{json.dumps(item_names)}
-
-Reply with ONLY a JSON array: [{{"item": "...", "category": "..."}}]
-The "category" value MUST be one of the exact category names listed above. Nothing else."""
-
             try:
                 resp = requests.post(
-                    f"{ollama_url}/api/generate",
+                    f"{ollama_url}/api/chat",
                     json={
                         "model": ollama_model,
-                        "prompt": prompt,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You sort shopping list items into categories. Reply ONLY with a JSON array. No other text.",
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Sort these items into the categories below. Each item must be assigned to exactly one category. Use ONLY the exact category names provided.\n\nCATEGORIES:\n{cat_list}\n\nITEMS:\n{json.dumps(item_names)}\n\nReply: [{{\"item\": \"...\", \"category\": \"...\"}}]",
+                            },
+                        ],
                         "stream": False,
                         "options": {"temperature": 0},
                     },
                     timeout=30,
                 )
                 resp.raise_for_status()
-                raw = resp.json().get("response", "")
+                raw = resp.json().get("message", {}).get("content", "")
 
                 # Parse JSON array from response
                 match = re.search(r'\[.*\]', raw, re.DOTALL)
                 if match:
                     result = json.loads(match.group())
-                    # Build item lookup
                     item_lookup = {i["name"].lower().strip(): i for i in llm_items}
 
                     for r in result:
@@ -198,7 +195,7 @@ The "category" value MUST be one of the exact category names listed above. Nothi
         assignments.sort(key=lambda a: item_id_order.get(a["item_id"], 999))
         return assignments
 
-    # Keep the old method name for backward compat
+    # Backward compat
     def auto_sort(self, items, categories, hints=None, threshold=0.25):
         return self.auto_sort_simple(items, categories, hints, threshold)
 

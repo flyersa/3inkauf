@@ -32,6 +32,8 @@ class UpdateListRequest(BaseModel):
 class ListResponse(BaseModel):
     id: str
     owner_id: str
+    owner_display_name: Optional[str] = None
+    owner_color: Optional[str] = None
     name: str
     sort_order: int
     created_at: datetime

@@ -18,11 +18,9 @@ async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    # Enable WAL mode for better concurrency
     async with engine.begin() as conn:
         await conn.exec_driver_sql("PRAGMA journal_mode=WAL")
         await conn.exec_driver_sql("PRAGMA busy_timeout=5000")
-    # Migrate existing databases
     await migrate_db()
 
 
@@ -31,6 +29,15 @@ async def migrate_db():
     async with engine.begin() as conn:
         try:
             await conn.exec_driver_sql("ALTER TABLE list_items ADD COLUMN image_path TEXT")
+        except Exception:
+            pass
+        try:
+            await conn.exec_driver_sql("ALTER TABLE sorting_hints ADD COLUMN list_id TEXT REFERENCES shopping_lists(id)")
+        except Exception:
+            pass
+        # Clean up old global hints that have no list_id (from before per-list change)
+        try:
+            await conn.exec_driver_sql("DELETE FROM sorting_hints WHERE list_id IS NULL")
         except Exception:
             pass
 

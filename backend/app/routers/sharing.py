@@ -76,6 +76,33 @@ async def share_list(
     )
 
 
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_shared_list(
+    list_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Recipient removes their own share — list itself is preserved so owner can re-invite."""
+    lst_result = await session.execute(
+        select(ShoppingList).where(ShoppingList.id == list_id)
+    )
+    lst = lst_result.scalar_one_or_none()
+    if not lst:
+        raise HTTPException(status_code=404, detail="List not found")
+    if lst.owner_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Owner cannot leave their own list")
+    share_result = await session.execute(
+        select(ListShare).where(
+            ListShare.list_id == list_id, ListShare.user_id == current_user.id
+        )
+    )
+    share = share_result.scalar_one_or_none()
+    if not share:
+        raise HTTPException(status_code=404, detail="You are not a participant of this list")
+    await session.delete(share)
+    await session.commit()
+
+
 @router.delete("/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_share(
     list_id: str,

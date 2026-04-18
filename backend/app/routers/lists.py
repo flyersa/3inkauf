@@ -53,10 +53,11 @@ async def get_lists(
     )
     owned_lists = owned_result.scalars().all()
 
-    # Get shared lists
+    # Get shared lists (joined with owner User so we can expose owner name/color)
     shared_result = await session.execute(
-        select(ShoppingList, ListShare.permission)
+        select(ShoppingList, ListShare.permission, User.display_name, User.color)
         .join(ListShare, ListShare.list_id == ShoppingList.id)
+        .join(User, User.id == ShoppingList.owner_id)
         .where(ListShare.user_id == current_user.id)
         .order_by(ShoppingList.sort_order, ShoppingList.created_at.desc())
     )
@@ -64,6 +65,7 @@ async def get_lists(
 
     # Count items per list
     all_list_ids = [l.id for l in owned_lists] + [row[0].id for row in shared_lists]
+
     item_counts = {}
     if all_list_ids:
         count_result = await session.execute(
@@ -76,14 +78,20 @@ async def get_lists(
     response = []
     for lst in owned_lists:
         response.append(ListResponse(
-            id=lst.id, owner_id=lst.owner_id, name=lst.name,
+            id=lst.id, owner_id=lst.owner_id,
+            owner_display_name=current_user.display_name,
+            owner_color=current_user.color,
+            name=lst.name,
             sort_order=lst.sort_order, created_at=lst.created_at,
             updated_at=lst.updated_at, is_owner=True,
             item_count=item_counts.get(lst.id, 0),
         ))
-    for lst, permission in shared_lists:
+    for lst, permission, owner_name, owner_color in shared_lists:
         response.append(ListResponse(
-            id=lst.id, owner_id=lst.owner_id, name=lst.name,
+            id=lst.id, owner_id=lst.owner_id,
+            owner_display_name=owner_name,
+            owner_color=owner_color,
+            name=lst.name,
             sort_order=lst.sort_order, created_at=lst.created_at,
             updated_at=lst.updated_at, is_owner=False, permission=permission,
             item_count=item_counts.get(lst.id, 0),
@@ -103,7 +111,10 @@ async def create_list(
     await session.commit()
     await session.refresh(lst)
     return ListResponse(
-        id=lst.id, owner_id=lst.owner_id, name=lst.name,
+        id=lst.id, owner_id=lst.owner_id,
+        owner_display_name=current_user.display_name,
+        owner_color=current_user.color,
+        name=lst.name,
         sort_order=lst.sort_order, created_at=lst.created_at,
         updated_at=lst.updated_at, is_owner=True, item_count=0,
     )
@@ -121,8 +132,17 @@ async def get_list(
     )
     item_count = count_result.scalar() or 0
 
+    if lst.owner_id == current_user.id:
+        owner_name, owner_color = current_user.display_name, current_user.color
+    else:
+        owner_result = await session.execute(select(User).where(User.id == lst.owner_id))
+        owner = owner_result.scalar_one()
+        owner_name, owner_color = owner.display_name, owner.color
+
     return ListResponse(
-        id=lst.id, owner_id=lst.owner_id, name=lst.name,
+        id=lst.id, owner_id=lst.owner_id,
+        owner_display_name=owner_name, owner_color=owner_color,
+        name=lst.name,
         sort_order=lst.sort_order, created_at=lst.created_at,
         updated_at=lst.updated_at, is_owner=(lst.owner_id == current_user.id),
         item_count=item_count,
@@ -145,8 +165,18 @@ async def update_list(
     session.add(lst)
     await session.commit()
     await session.refresh(lst)
+
+    if lst.owner_id == current_user.id:
+        owner_name, owner_color = current_user.display_name, current_user.color
+    else:
+        owner_result = await session.execute(select(User).where(User.id == lst.owner_id))
+        owner = owner_result.scalar_one()
+        owner_name, owner_color = owner.display_name, owner.color
+
     return ListResponse(
-        id=lst.id, owner_id=lst.owner_id, name=lst.name,
+        id=lst.id, owner_id=lst.owner_id,
+        owner_display_name=owner_name, owner_color=owner_color,
+        name=lst.name,
         sort_order=lst.sort_order, created_at=lst.created_at,
         updated_at=lst.updated_at, is_owner=(lst.owner_id == current_user.id),
     )

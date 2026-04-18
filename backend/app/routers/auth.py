@@ -12,6 +12,7 @@ from app.core.security import (
 )
 from app.core.deps import get_current_user
 from app.models.user import User, PasswordResetToken
+from app.models.sorting_hint import SortingHint
 from app.schemas.auth import (
     RegisterRequest, LoginRequest,
     ForgotPasswordRequest, ResetPasswordRequest,
@@ -154,3 +155,20 @@ async def update_profile(
     await session.commit()
     await session.refresh(current_user)
     return current_user
+
+
+@router.delete("/me/hints")
+async def wipe_all_hints(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete all sorting hints for the current user across all lists."""
+    result = await session.execute(
+        select(SortingHint).where(SortingHint.user_id == current_user.id)
+    )
+    hints = result.scalars().all()
+    count = len(hints)
+    for hint in hints:
+        await session.delete(hint)
+    await session.commit()
+    return {"message": f"Deleted {count} hints", "deleted": count}

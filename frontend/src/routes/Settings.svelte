@@ -2,12 +2,14 @@
   import { onMount } from 'svelte';
   import { t, locale, availableLocales } from '../lib/i18n.js';
   import { getProfile, updateProfile } from '../lib/auth.js';
+  import { api } from '../lib/api.js';
   import { user, showToast } from '../lib/store.js';
   import Navbar from '../components/Navbar.svelte';
 
   let displayName = $state('');
   let color = $state('#4A90D9');
   let saving = $state(false);
+  let wipingHints = $state(false);
 
   onMount(async () => {
     try {
@@ -39,6 +41,19 @@
     }
   }
 
+  async function wipeHints() {
+    if (!confirm($t('settings.hints.wipe.confirm'))) return;
+    wipingHints = true;
+    try {
+      const result = await api.delete('/auth/me/hints');
+      showToast($t('settings.hints.wiped'), 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      wipingHints = false;
+    }
+  }
+
   const colors = ['#4A90D9', '#E74C3C', '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E91E63', '#FF9800'];
 </script>
 
@@ -54,7 +69,7 @@
     </div>
 
     <div>
-      <span class="block text-sm font-medium text-gray-700 mb-2">{("settings.language")}</span>
+      <span class="block text-sm font-medium text-gray-700 mb-2">{$t('settings.language')}</span>
       <div class="flex gap-2">
         {#each availableLocales as loc}
           <button
@@ -70,12 +85,13 @@
     </div>
 
     <div>
-      <span class="block text-sm font-medium text-gray-700 mb-2">{("settings.color")}</span>
+      <span class="block text-sm font-medium text-gray-700 mb-2">{$t('settings.color')}</span>
       <div class="flex gap-2 flex-wrap">
         {#each colors as c}
           <button
             type="button"
-            onclick={() => color = c} aria-label="Select color"
+            onclick={() => color = c}
+            aria-label="Select color"
             class="w-8 h-8 rounded-full border-2 transition-transform
               {color === c ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-105'}"
             style="background-color: {c}"
@@ -89,4 +105,13 @@
       {saving ? '...' : $t('btn.save')}
     </button>
   </form>
+
+  <!-- AI Hints -->
+  <div class="mt-8 pt-6 border-t border-gray-200">
+    <h2 class="text-sm font-semibold text-gray-600 mb-2">{$t('settings.hints.title')}</h2>
+    <p class="text-xs text-gray-400 mb-3">{$t('settings.hints.description')}</p>
+    <button onclick={wipeHints} disabled={wipingHints} class="btn-danger">
+      {wipingHints ? '...' : $t('settings.hints.wipe')}
+    </button>
+  </div>
 </main>
