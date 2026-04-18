@@ -1,14 +1,17 @@
 # 3inkauf
 
-A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery shopping with smart auto-categorization.
+A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery shopping with AI-powered auto-categorization, paper-list photo scanning, voice commands, and loyalty-card storage.
 
 ## Features
 
 ### Shopping Lists
 - Create and manage multiple named shopping lists
 - Share lists with other users for real-time collaborative editing
+- Leave a shared list at any time without deleting it (owner can re-invite)
 - Color-coded items showing who added each item on shared lists
-- WebSocket-based real-time sync — changes appear instantly for all users
+- Duplicate item names within a list are rejected (case-insensitive)
+- Duplicate list names per owner are rejected (other users can still have a list with the same name)
+- WebSocket-based real-time sync — changes appear instantly for all users (including the originator)
 
 ### Items & Categories
 - Add items with optional quantity
@@ -16,23 +19,48 @@ A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery 
 - Drag & drop to reorder items and categories (handle-based, mobile-friendly)
 - Move items between categories via a quick category picker
 - Check off items while shopping (tap the circle to mark as done)
-- Attach photos to items (take a photo or choose from gallery)
+- Attach photos to items (take a photo or choose from gallery, client-side compressed)
 - Clear all items button (preserves categories for reuse)
+
+### Paper List Scanning (Ollama vision)
+- Camera button next to "New list" — photograph a handwritten or printed list
+- Backend sends the image to `gemma4:e4b` (vision) on Ollama, returns structured items + proposed categories
+- Preview dialog lets the user tick/untick items before saving; accepted items and their categories are then created on the new list
+- Categories are returned in the user's locale (German or English)
+- Button only appears if Ollama is configured (checked via `/health`)
+
+### Voice Control (Web Speech + Ollama)
+- Microphone button in the navbar; tap once to enter continuous listening mode, tap again to stop
+- Uses the browser's Web Speech API for zero-infra speech-to-text (Chrome/Edge/Safari; Firefox unsupported)
+- Transcript sent to the backend `/voice/intent` endpoint which uses `gemma4:e4b` to parse a structured command
+- Supported intents: `create_list`, `add_items` (multi-item with quantities), `check_item`, `uncheck_item`, `delete_item`, `clear_list`, `unknown`
+- Multi-item commands are per-item tolerant — duplicates or unrecognised fragments are skipped, the rest go through
+- Context-aware: on the list overview only `create_list` works; inside a list the full vocabulary is available
+- Fuzzy item matching for check/uncheck/delete (handles articles, inflections)
 
 ### Smart Auto-Sort
 - One-tap AI button assigns uncategorized items to matching categories
 - **Two AI modes** (backend configuration, transparent to users):
   - **Simple**: Built-in multilingual sentence embeddings (fastembed/ONNX, works offline, no external dependencies)
-  - **Advanced**: Ollama LLM integration (e.g., Gemma3:4b) — near-perfect accuracy for any language, food taxonomy fully understood
+  - **Advanced**: Ollama LLM integration (`gemma4:e4b` recommended) — near-perfect accuracy for any language, strong food taxonomy
 - If `OLLAMA_URL` is configured, advanced mode is used automatically; otherwise falls back to simple
 - **Learning system**: Save your manual categorizations as hints — future sorts use your corrections first (98% confidence)
-- Hints persist per user across all lists and work with both AI modes
+- Hints are per-user, per-list and work with both AI modes
+
+### Bonus Cards (Bonuskarten)
+- Dedicated page for loyalty / bonus cards (Payback, Shell ClubSmart, etc.)
+- Add cards with name, optional description, and a photo (camera or gallery upload)
+- Share individual cards with other users (view-only) by email
+- "Leave" a shared card at any time — the owner can re-share later
+- Owner-only controls: edit photo, delete card, manage shares
+- Images stored as SQLite BLOBs alongside item photos
 
 ### User Management
 - Email + password registration (no other personal info required)
 - Password reset via email link (SMTP configurable)
 - "Remember me" option — stay logged in for up to 30 days
-- Per-user display color for shared list attribution
+- Per-user display color for shared list attribution; auto-assigned from a distinct palette on registration (manual colour choice is honoured and preserved across any future migrations)
+- Re-roll at share time: if an invitee hasn't customised their colour and would collide with the owner or other recipients, their colour is swapped to a distinct palette value automatically
 
 ### Mobile & PWA
 - Installable as a PWA on iOS and Android
@@ -40,11 +68,12 @@ A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery 
 - Offline detection with status banner
 - Service worker with Workbox for app shell caching
 - Touch-friendly controls (handle-based drag & drop, bottom sheet dialogs)
+- **Force-update on deploy**: `skipWaiting` + `clientsClaim` + `cleanupOutdatedCaches` in Workbox, `controllerchange` auto-reload on the client, `Cache-Control: no-cache` on `index.html` / `sw.js` / `registerSW.js` / `manifest.webmanifest` in nginx — a new deploy takes effect on the next page load without manual hard refresh
 
 ### Internationalization
 - German and English included
 - Auto-detects browser language (German-speaking locales → German, else English)
-- Language switcher available on login page and in the app
+- Flag-based language picker in the navbar
 - Easily extensible — add a JSON file for new languages
 
 ## Tech Stack
@@ -57,7 +86,8 @@ A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery 
 | Auth | JWT (PyJWT) + bcrypt |
 | Email | aiosmtplib (any SMTP provider) |
 | ML (simple) | fastembed (ONNX Runtime), ~120MB model, built-in |
-| ML (advanced) | Ollama API (e.g., Gemma3:4b), optional, near-perfect accuracy |
+| ML (advanced + vision + voice) | Ollama API, `gemma4:e4b` recommended |
+| Speech-to-text | Web Speech API (browser-native, no server dependency) |
 | Frontend | Svelte 5, Vite |
 | CSS | Tailwind CSS |
 | Real-time | WebSockets (FastAPI native) |
@@ -104,14 +134,14 @@ SMTP_PASSWORD=your-smtp-password
 SMTP_SENDER=no-reply@yourdomain.com
 SMTP_USE_TLS=true
 
-# ML model (default works out of the box)
+# ML model for simple auto-sort (default works out of the box)
 ML_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
-# Ollama (optional - enables advanced AI mode for much better sorting accuracy)
-# If set, auto-sort uses the LLM instead of sentence embeddings
-# Recommended model: gemma3:4b (~3GB VRAM, fast, excellent multilingual)
-OLLAMA_URL=
-OLLAMA_MODEL=gemma3:4b
+# Ollama (optional - enables advanced AI sort, paper-list scan, and voice-intent parsing)
+# Without Ollama the scan + voice buttons are hidden from the UI; the simple sort path still works.
+# Recommended model: gemma4:e4b (~10GB VRAM, vision + instruction-tuned, supports JSON mode)
+OLLAMA_URL=http://your-ollama-host:11434
+OLLAMA_MODEL=gemma4:e4b
 ```
 
 Generate a secret key:
@@ -126,10 +156,10 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))"
      |                 |
   serves SPA      REST API + WebSocket
   proxies /api/   ML model loaded at startup
-  proxies /ws/
+  proxies /ws/    Ollama calls (vision + text) over HTTP
 ```
 
-- **Frontend container**: Nginx serving the built SPA (~25MB image)
+- **Frontend container**: Nginx serving the built SPA (~26MB image)
 - **Backend container**: Python + FastAPI + ML model (~450MB image)
 - **Data volume**: SQLite database + uploaded images (stored as BLOBs)
 
@@ -142,7 +172,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install fastapi[standard] uvicorn[standard] sqlmodel aiosqlite alembic \
     pyjwt "passlib[bcrypt]" "bcrypt==4.3.0" aiosmtplib pydantic-settings \
-    fastembed numpy slowapi python-multipart jinja2
+    fastembed numpy slowapi python-multipart jinja2 requests
 cp ../.env .
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
@@ -154,6 +184,8 @@ npm run dev
 ```
 
 The Vite dev server proxies `/api` and `/ws` to the backend on port 8000.
+
+> **Voice & microphone**: the Web Speech API requires HTTPS. When testing from a mobile device, either use `localhost` forwarding or put the dev host behind TLS (e.g., via a Cloudflare Tunnel). On plain HTTP the browser will silently refuse microphone access.
 
 ## Docker Hub
 
@@ -174,7 +206,7 @@ A complete k8s manifest is included in `k8s.yaml`. It deploys the app with a sin
 ### Steps
 
 1. **Edit `k8s.yaml`** — update these values for your environment:
-   - `Secret` → set your own `SECRET_KEY`, `BASE_URL`, and SMTP credentials
+   - `Secret` → set your own `SECRET_KEY`, `BASE_URL`, SMTP credentials, and optionally `OLLAMA_URL` / `OLLAMA_MODEL`
    - `PersistentVolumeClaim` → change `storageClassName` to match your cluster (default: `openebs-lvmpv`)
    - `Ingress` → change `ingressClassName` and `host` to match your setup
 
@@ -200,9 +232,9 @@ A complete k8s manifest is included in `k8s.yaml`. It deploys the app with a sin
 | Resource | Name | Purpose |
 |----------|------|---------|
 | Namespace | `3inkauf` | Isolation |
-| Secret | `3inkauf-secrets` | Env vars (JWT key, SMTP, DB path) |
-| PVC | `3inkauf-data` | 2Gi volume for SQLite + image BLOBs |
-| Deployment | `backend` | FastAPI + ML model (1 replica, Recreate strategy) |
+| Secret | `3inkauf-secrets` | Env vars (JWT key, SMTP, DB path, Ollama URL/model) |
+| PVC | `3inkauf-data` | 50Gi volume for SQLite + image BLOBs |
+| Deployment | `backend` | FastAPI + ML model (1 replica, Recreate strategy, 4 CPU / 4 Gi limit) |
 | Deployment | `frontend` | Nginx serving SPA (1 replica) |
 | Service | `backend` | ClusterIP :8000 |
 | Service | `frontend` | ClusterIP :80 |
@@ -218,11 +250,12 @@ A complete k8s manifest is included in `k8s.yaml`. It deploys the app with a sin
 
 [backend pod] → [PVC /data] → SQLite database + image BLOBs
                     └── ML model loaded in memory at startup
+                    └── outbound → Ollama host (vision + text intent)
 ```
 
 ### Notes
 
-- **Ollama integration**: Add `OLLAMA_URL` and `OLLAMA_MODEL` to the Secret to enable advanced AI sorting. The Ollama instance must be reachable from the backend pod.
+- **Ollama integration**: Add `OLLAMA_URL` and `OLLAMA_MODEL` to the Secret to enable advanced AI sort, paper-list scanning, and voice-intent parsing. The Ollama instance must be reachable from the backend pod.
 - **Single replica** for the backend is required since SQLite doesn't support concurrent writes from multiple processes. If you need horizontal scaling, migrate to PostgreSQL.
 - **Recreate strategy** on the backend deployment ensures the PVC is unmounted before a new pod starts (SQLite file locking).
 - All data (database + uploaded images) is stored in the PVC. Back up the PVC to preserve data.
@@ -234,21 +267,31 @@ All endpoints under `/api/v1`:
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /auth/register` | Create account |
+| `POST /auth/register` | Create account (random palette color assigned) |
 | `POST /auth/login` | Login (returns JWT) |
 | `POST /auth/forgot-password` | Send reset email |
-| `GET /lists` | All lists (owned + shared) |
-| `POST /lists` | Create list |
+| `PATCH /auth/me` | Update display name / color / locale |
+| `GET /lists` | All lists (owned + shared, with owner attribution) |
+| `POST /lists` | Create list (rejects duplicate name for owner) |
+| `PATCH /lists/{id}` | Rename list (rejects duplicate name for owner) |
+| `DELETE /lists/{id}/shares/me` | Leave a shared list |
 | `GET /lists/{id}/items` | List items |
-| `POST /lists/{id}/items` | Add item |
+| `POST /lists/{id}/items` | Add item (rejects duplicate name within list) |
 | `PATCH /lists/{id}/items/{id}/check` | Toggle item checked |
 | `POST /lists/{id}/items/{id}/image` | Upload photo |
 | `POST /lists/{id}/categories` | Create category |
-| `POST /lists/{id}/shares` | Share list by email |
+| `POST /lists/{id}/shares` | Share list by email (auto-reroll invitee colour on conflict) |
 | `POST /lists/{id}/auto-sort` | AI auto-categorize |
 | `POST /lists/{id}/save-hints` | Save sort hints |
+| `POST /lists/scan` | Upload a photo of a paper list → proposed items + categories |
+| `POST /voice/intent` | Parse a spoken transcript into a structured command |
+| `GET /bonus-cards` | List your bonus cards + cards shared with you |
+| `POST /bonus-cards` | Create a new bonus card |
+| `POST /bonus-cards/{id}/image` | Upload a card photo |
+| `POST /bonus-cards/{id}/shares` | Share a bonus card by email (view-only) |
+| `DELETE /bonus-cards/{id}/shares/me` | Leave a shared bonus card |
 | `WS /ws/lists/{id}?token=` | Real-time sync |
-| `GET /health` | Health check |
+| `GET /health` | Health check — reports `model_loaded` and `ollama_enabled` |
 
 Full API docs available at `/docs` (Swagger UI) when running the backend.
 
@@ -259,26 +302,37 @@ Full API docs available at `/docs` (Swagger UI) when running the backend.
 ├── docker-compose.yml
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
-├── nginx.conf
+├── nginx.conf                # force-refresh headers on index/SW
 ├── .env.example
 ├── backend/
 │   └── app/
-│       ├── main.py            # App entry, routers, WebSocket
-│       ├── config.py          # Settings (env vars)
-│       ├── database.py        # SQLite + migrations
-│       ├── models/            # Database models
-│       ├── schemas/           # Request/response schemas
-│       ├── routers/           # API endpoints
-│       ├── services/          # Business logic (email, ML)
-│       └── core/              # Auth, dependencies, WebSocket manager
+│       ├── main.py           # App entry, routers, WebSocket
+│       ├── config.py         # Settings (env vars)
+│       ├── database.py       # SQLite + one-shot migrations (incl. user-colour randomiser)
+│       ├── models/           # Database models (incl. BonusCard, BonusCardShare)
+│       ├── schemas/          # Request/response schemas
+│       ├── routers/
+│       │   ├── auth.py, lists.py, categories.py, items.py, sharing.py, ml.py, images.py
+│       │   ├── bonus_cards.py       # CRUD + sharing + leave
+│       │   ├── lists_scan.py        # POST /lists/scan (gemma vision)
+│       │   └── voice.py             # POST /voice/intent
+│       ├── services/
+│       │   └── ml_service.py # fastembed + Ollama (sort, scan, voice-intent)
+│       └── core/
+│           ├── security.py, deps.py, websocket.py
+│           └── palette.py    # distinct-colour palette for auto-assignment
 └── frontend/
     ├── src/
-    │   ├── App.svelte         # Router + global UI
-    │   ├── lib/               # API client, auth, i18n, WebSocket
-    │   ├── locales/           # de.json, en.json
-    │   ├── routes/            # Page components
-    │   └── components/        # Shared components
-    └── public/                # Icons, manifest
+    │   ├── App.svelte        # Router + global UI
+    │   ├── main.js           # SW registration + auto-reload on controller change
+    │   ├── lib/
+    │   │   ├── api.js, auth.js, i18n.js, store.js, ws.js
+    │   │   ├── voice.js              # Web Speech wrapper (continuous session)
+    │   │   └── voice_dispatch.js     # Intent → REST call dispatcher
+    │   ├── locales/          # de.json, en.json
+    │   ├── routes/           # Page components (incl. BonusCards.svelte)
+    │   └── components/       # Shared (Navbar, ShareDialog, AutoSortDialog, VoiceButton)
+    └── public/               # Icons, manifest
 ```
 
 ## License

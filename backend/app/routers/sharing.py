@@ -9,6 +9,7 @@ from app.models.shopping_list import ShoppingList
 from app.models.list_share import ListShare
 from app.routers.lists import get_list_with_access
 from app.schemas.shopping_list import ShareRequest, ShareResponse
+from app.core.palette import random_user_color
 
 router = APIRouter(prefix="/lists/{list_id}/shares", tags=["sharing"])
 
@@ -61,6 +62,21 @@ async def share_list(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="List already shared with this user")
+
+    # If the invitee hasn't customised their color and would collide with
+    # someone already on this list (owner or other recipients), reroll to a
+    # distinct palette colour so the legend is readable.
+    if not target_user.color_customized:
+        owner_result = await session.execute(select(User).where(User.id == lst.owner_id))
+        owner = owner_result.scalar_one()
+        existing_result = await session.execute(
+            select(User).join(ListShare, ListShare.user_id == User.id)
+            .where(ListShare.list_id == list_id)
+        )
+        used = {owner.color.lower()} | {u.color.lower() for u in existing_result.scalars().all()}
+        if target_user.color.lower() in used:
+            target_user.color = random_user_color(avoid=list(used))
+            session.add(target_user)
 
     share = ListShare(
         list_id=list_id, user_id=target_user.id, permission=req.permission

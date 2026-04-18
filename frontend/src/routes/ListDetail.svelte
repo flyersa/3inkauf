@@ -3,7 +3,7 @@
   import { t } from '../lib/i18n.js';
   import { api } from '../lib/api.js';
   import { getProfile } from '../lib/auth.js';
-  import { showToast, user } from '../lib/store.js';
+  import { showToast, user, voiceContext } from '../lib/store.js';
   import { createListSocket } from '../lib/ws.js';
   import { dndzone } from 'svelte-dnd-action';
   import Navbar from '../components/Navbar.svelte';
@@ -23,6 +23,17 @@
   let showShare = $state(false);
   let showAutoSort = $state(false);
   let showAddCategory = $state(false);
+
+  // Keep the voice-control context in sync with this route's state.
+  $effect(() => {
+    voiceContext.set({
+      route: 'list',
+      list_id: list?.id || params.id,
+      list_name: list?.name || null,
+      items: items.map((it) => it.name),
+      items_full: items.map((it) => ({ id: it.id, name: it.name, checked: it.checked })),
+    });
+  });
   let addingItem = $state(false);
   let addingCat = $state(false);
   let socket = null;
@@ -83,11 +94,29 @@
 
   function handleWsMessage(msg) {
     switch (msg.type) {
-      case 'item_added': items = [...items, msg.item]; break;
-      case 'item_updated': items = items.map(i => i.id === msg.item.id ? msg.item : i); break;
-      case 'item_checked': items = items.map(i => i.id === msg.item_id ? { ...i, checked: msg.checked } : i); break;
-      case 'item_removed': items = items.filter(i => i.id !== msg.item_id); break;
-      case 'items_cleared': items = []; break;
+      case 'item_added':
+        // The backend now broadcasts to everyone including the originator, so
+        // the manual optimistic-add path and the voice/SW-push path both land
+        // here. Dedup by id to avoid double rendering.
+        if (!items.some((i) => i.id === msg.item.id)) items = [...items, msg.item];
+        rebuildGroups();
+        break;
+      case 'item_updated':
+        items = items.map(i => i.id === msg.item.id ? msg.item : i);
+        rebuildGroups();
+        break;
+      case 'item_checked':
+        items = items.map(i => i.id === msg.item_id ? { ...i, checked: msg.checked } : i);
+        rebuildGroups();
+        break;
+      case 'item_removed':
+        items = items.filter(i => i.id !== msg.item_id);
+        rebuildGroups();
+        break;
+      case 'items_cleared':
+        items = [];
+        rebuildGroups();
+        break;
       case 'items_reordered': {
         const m = {}; msg.item_ids.forEach((id, idx) => { m[id] = (idx+1)*10; });
         items = items.map(i => m[i.id] !== undefined ? { ...i, sort_order: m[i.id] } : i).sort((a,b) => a.sort_order - b.sort_order);

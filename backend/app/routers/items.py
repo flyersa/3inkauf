@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import select, func
 
 from app.database import get_session
 from app.core.deps import get_current_user
@@ -80,6 +80,20 @@ async def create_item(
 ):
     await get_list_with_access(list_id, current_user, session)
 
+    # Reject duplicates (case-insensitive, trimmed) within the same list.
+    name_key = (req.name or "").strip().lower()
+    dupe = await session.execute(
+        select(ListItem).where(
+            ListItem.list_id == list_id,
+            func.lower(func.trim(ListItem.name)) == name_key,
+        )
+    )
+    if dupe.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{req.name}' is already on this list",
+        )
+
     result = await session.execute(
         select(ListItem.sort_order).where(ListItem.list_id == list_id)
         .order_by(ListItem.sort_order.desc()).limit(1)
@@ -103,7 +117,7 @@ async def create_item(
     await manager.broadcast(list_id, {
         "type": "item_added",
         "item": response.model_dump(mode="json"),
-    }, exclude_user=current_user.id)
+    })
 
     return response
 
@@ -132,7 +146,7 @@ async def reorder_items(
     await manager.broadcast(list_id, {
         "type": "items_reordered",
         "item_ids": req.item_ids,
-    }, exclude_user=current_user.id)
+    })
 
     return await get_items_enriched(list_id, session)
 
@@ -154,6 +168,21 @@ async def update_item(
         raise HTTPException(status_code=404, detail="Item not found")
 
     if req.name is not None:
+        new_key = req.name.strip().lower()
+        current_key = (item.name or "").strip().lower()
+        if new_key != current_key:
+            dupe = await session.execute(
+                select(ListItem).where(
+                    ListItem.list_id == list_id,
+                    ListItem.id != item.id,
+                    func.lower(func.trim(ListItem.name)) == new_key,
+                )
+            )
+            if dupe.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"'{req.name}' is already on this list",
+                )
         item.name = req.name
     if req.quantity is not None:
         item.quantity = req.quantity
@@ -174,7 +203,7 @@ async def update_item(
     await manager.broadcast(list_id, {
         "type": "item_updated",
         "item": response.model_dump(mode="json"),
-    }, exclude_user=current_user.id)
+    })
 
     return response
 
@@ -207,7 +236,7 @@ async def toggle_check(
         "item_id": item.id,
         "checked": item.checked,
         "user": {"id": current_user.id, "display_name": current_user.display_name},
-    }, exclude_user=current_user.id)
+    })
 
     return response
 
@@ -234,7 +263,7 @@ async def delete_item(
         "type": "item_removed",
         "item_id": item_id,
         "user": {"id": current_user.id, "display_name": current_user.display_name},
-    }, exclude_user=current_user.id)
+    })
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
@@ -256,4 +285,4 @@ async def clear_all_items(
     await manager.broadcast(list_id, {
         "type": "items_cleared",
         "user": {"id": current_user.id, "display_name": current_user.display_name},
-    }, exclude_user=current_user.id)
+    })

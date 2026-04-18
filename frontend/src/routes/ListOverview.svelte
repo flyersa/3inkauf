@@ -3,9 +3,11 @@
   import { t, locale } from '../lib/i18n.js';
   import { api } from '../lib/api.js';
   import { getProfile, logout } from '../lib/auth.js';
-  import { user, showToast } from '../lib/store.js';
+  import { user, showToast, voiceContext } from '../lib/store.js';
   import { push } from 'svelte-spa-router';
   import Navbar from '../components/Navbar.svelte';
+
+  voiceContext.set({ route: 'list_overview', list_id: null, list_name: null, items: [], items_full: [] });
 
   let lists = $state([]);
   let newListName = $state('');

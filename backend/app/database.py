@@ -26,6 +26,9 @@ async def init_db():
 
 async def migrate_db():
     """Add columns that may not exist in older databases."""
+    import random
+    from app.core.palette import USER_COLOR_PALETTE, DEFAULT_COLOR
+
     async with engine.begin() as conn:
         try:
             await conn.exec_driver_sql("ALTER TABLE list_items ADD COLUMN image_path TEXT")
@@ -40,6 +43,33 @@ async def migrate_db():
             await conn.exec_driver_sql("DELETE FROM sorting_hints WHERE list_id IS NULL")
         except Exception:
             pass
+
+    # Per-user color migration. On the very first startup after this column is
+    # introduced, assign every user who still has the historic default color
+    # a random palette color. After this runs once the column exists and the
+    # block is skipped on subsequent startups, so deliberate future picks of
+    # #4A90D9 are respected.
+    fresh_column = False
+    async with engine.begin() as conn:
+        try:
+            await conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN color_customized INTEGER DEFAULT 0"
+            )
+            fresh_column = True
+        except Exception:
+            pass
+
+    if fresh_column:
+        async with engine.begin() as conn:
+            res = await conn.exec_driver_sql(
+                "SELECT id FROM users WHERE color = ?", (DEFAULT_COLOR,)
+            )
+            user_ids = [row[0] for row in res.fetchall()]
+            for uid in user_ids:
+                new_color = random.choice(USER_COLOR_PALETTE)
+                await conn.exec_driver_sql(
+                    "UPDATE users SET color = ? WHERE id = ?", (new_color, uid)
+                )
 
 
 async def get_session():

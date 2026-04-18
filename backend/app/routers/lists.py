@@ -106,6 +106,21 @@ async def create_list(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    # Reject duplicate name among this user's OWNED lists (case-insensitive, trimmed).
+    # Shared-in lists don't count — those belong to other users.
+    name_key = (req.name or "").strip().lower()
+    dupe = await session.execute(
+        select(ShoppingList).where(
+            ShoppingList.owner_id == current_user.id,
+            func.lower(func.trim(ShoppingList.name)) == name_key,
+        )
+    )
+    if dupe.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail=f"You already have a list named '{req.name}'",
+        )
+
     lst = ShoppingList(owner_id=current_user.id, name=req.name)
     session.add(lst)
     await session.commit()
@@ -158,6 +173,21 @@ async def update_list(
 ):
     lst = await get_list_with_access(list_id, current_user, session)
     if req.name is not None:
+        new_key = req.name.strip().lower()
+        current_key = (lst.name or "").strip().lower()
+        if new_key != current_key:
+            dupe = await session.execute(
+                select(ShoppingList).where(
+                    ShoppingList.owner_id == lst.owner_id,
+                    ShoppingList.id != lst.id,
+                    func.lower(func.trim(ShoppingList.name)) == new_key,
+                )
+            )
+            if dupe.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"You already have a list named '{req.name}'",
+                )
         lst.name = req.name
     if req.sort_order is not None:
         lst.sort_order = req.sort_order

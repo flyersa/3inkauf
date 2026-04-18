@@ -100,5 +100,9 @@
   "scan.all": "All",
   "scan.none": "None",
   "scan.save": "Create list",
-  "scan.saved": "List created from photo"
+  "scan.saved": "List created from photo",
+  "voice.tooltip": "Voice control",
+  "voice.unsupported": "Voice control is not supported in this browser",
+  "voice.permission": "Microphone permission was denied — please allow it in the browser",
+  "voice.error": "Voice command failed"
 }

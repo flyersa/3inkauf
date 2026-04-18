@@ -19,6 +19,7 @@ from app.schemas.auth import (
     UpdateProfileRequest, TokenResponse, UserResponse,
 )
 from app.services.email_service import send_password_reset_email
+from app.core.palette import random_user_color
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -35,6 +36,7 @@ async def register(req: RegisterRequest, session: AsyncSession = Depends(get_ses
         password_hash=hash_password(req.password),
         display_name=req.display_name,
         locale=req.locale,
+        color=random_user_color(),
     )
     session.add(user)
     await session.commit()
@@ -149,6 +151,7 @@ async def update_profile(
         current_user.locale = req.locale
     if req.color is not None:
         current_user.color = req.color
+        current_user.color_customized = True
     current_user.updated_at = datetime.now(timezone.utc)
 
     session.add(current_user)

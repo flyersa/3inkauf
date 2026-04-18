@@ -12,6 +12,9 @@ class User(SQLModel, table=True):
     password_hash: str = Field(max_length=255)
     display_name: str = Field(max_length=100)
     color: str = Field(default="#4A90D9", max_length=7)
+    # True once the user has explicitly chosen their color; prevents the
+    # one-shot migration from touching users who like #4A90D9 on purpose.
+    color_customized: bool = Field(default=False)
     locale: str = Field(default="de", max_length=5)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

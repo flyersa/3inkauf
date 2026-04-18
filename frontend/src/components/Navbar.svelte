@@ -2,6 +2,7 @@
   import { t, locale, availableLocales } from '../lib/i18n.js';
   import { logout } from '../lib/auth.js';
   import { user } from '../lib/store.js';
+  import VoiceButton from './VoiceButton.svelte';
 
   let flagOpen = $state(false);
   let flagWrap = $state(null);
@@ -70,6 +71,7 @@
           </div>
         {/if}
       </div>
+      <VoiceButton />
       <a href="#/bonus-cards" class="btn-icon" title={$t('bonus.title')}>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="5" width="20" height="14" rx="2" />

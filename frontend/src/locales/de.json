@@ -100,5 +100,9 @@
   "scan.all": "Alle",
   "scan.none": "Keine",
   "scan.save": "Liste erstellen",
-  "scan.saved": "Liste aus Foto erstellt"
+  "scan.saved": "Liste aus Foto erstellt",
+  "voice.tooltip": "Sprachsteuerung",
+  "voice.unsupported": "Sprachsteuerung wird von diesem Browser nicht unterstützt",
+  "voice.permission": "Mikrofon wurde abgelehnt — bitte im Browser erlauben",
+  "voice.error": "Sprachbefehl fehlgeschlagen"
 }

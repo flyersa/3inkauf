@@ -218,6 +218,143 @@ class MLService:
     def auto_sort(self, items, categories, hints=None, threshold=0.25):
         return self.auto_sort_simple(items, categories, hints, threshold)
 
+    def parse_voice_intent(
+        self,
+        transcript: str,
+        context: dict,
+        ollama_url: str,
+        ollama_model: str,
+    ) -> dict:
+        """Convert a spoken transcript into a structured app command via gemma4."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+
+        route = context.get("route") or "unknown"
+        list_name = context.get("list_name") or ""
+        list_id = context.get("list_id") or ""
+        items_on_list = context.get("items") or []
+        locale = context.get("locale") or "en"
+        language_name = "German" if locale.startswith("de") else "English"
+
+        items_ctx = (
+            ", ".join(items_on_list[:50]) if items_on_list else "(no items)"
+        )
+        list_ctx = list_name if list_name else "(none)"
+
+        schema = (
+            '{"action": "create_list|add_items|check_item|uncheck_item|'
+            'delete_item|clear_list|unknown", '
+            '"list_name": "<for create_list>", '
+            '"items": [{"name": "<item>", "quantity": "<qty or null>"}], '
+            '"item_name": "<for check/uncheck/delete>", '
+            '"message": "<short confirmation in the user\'s language>"}'
+        )
+
+        prompt = (
+            f"You convert a voice transcript from a shopping-list app into a structured "
+            f"command. Respond with JSON ONLY.\n\n"
+            f"Allowed actions:\n"
+            f"- create_list: user wants a new list. Use `list_name`.\n"
+            f"- add_items: user wants to add one OR MORE items to the current list. "
+            f"ALWAYS split a comma/and-separated sequence into multiple entries in "
+            f"`items` (e.g. 'Pizza, Milch und zwei Eier' -> 3 entries). Each entry has "
+            f"`name` and optional `quantity`.\n"
+            f"- check_item: mark an existing item done. Use `item_name`; match "
+            f"case-insensitively against the current items.\n"
+            f"- uncheck_item: mark an existing item NOT done. Use `item_name`.\n"
+            f"- delete_item: remove an existing item. Use `item_name`.\n"
+            f"- clear_list: remove all items on the current list.\n"
+            f"- unknown: anything else, including commands that can't be fulfilled in "
+            f"the current context. Set `message` to a short explanation "
+            f"in {language_name}.\n\n"
+            f"Rules:\n"
+            f"- Preserve the original language of item names; do not translate.\n"
+            f"- Extract explicit quantities (e.g. '2 Milch' -> name=Milch, quantity='2'; "
+            f"'500g Mehl' -> quantity='500g'). If no quantity, set quantity=null.\n"
+            f"- `message` MUST be in {language_name}, one short sentence confirming what "
+            f"you understood.\n"
+            f"- If the user is on list_overview and tries to add/check/delete/clear "
+            f"without first creating or opening a list, return action=unknown with a "
+            f"message explaining they need to open a list first.\n"
+            f"- For check/uncheck/delete, `item_name` should match an entry from the "
+            f"current items list as closely as possible (handle German articles and "
+            f"inflections).\n\n"
+            f"Examples:\n"
+            f'Transcript: "Füge Pizza, Toilettenpapier und Eiscreme hinzu"\n'
+            f'-> {{"action":"add_items","items":[{{"name":"Pizza","quantity":null}},{{"name":"Toilettenpapier","quantity":null}},{{"name":"Eiscreme","quantity":null}}],"message":"3 Artikel hinzugefügt"}}\n'
+            f'Transcript: "add pizza, toilet paper, ice cream"\n'
+            f'-> {{"action":"add_items","items":[{{"name":"pizza","quantity":null}},{{"name":"toilet paper","quantity":null}},{{"name":"ice cream","quantity":null}}],"message":"Added 3 items"}}\n'
+            f'Transcript: "zwei Liter Milch und drei Eier hinzufügen"\n'
+            f'-> {{"action":"add_items","items":[{{"name":"Milch","quantity":"2 Liter"}},{{"name":"Eier","quantity":"3"}}],"message":"2 Artikel hinzugefügt"}}\n'
+            f'Transcript: "Erstelle eine Liste namens Wochenende"\n'
+            f'-> {{"action":"create_list","list_name":"Wochenende","message":"Liste \\"Wochenende\\" erstellt"}}\n'
+            f'Transcript: "Milch ist erledigt"  (with Milch on the list)\n'
+            f'-> {{"action":"check_item","item_name":"Milch","message":"Milch abgehakt"}}\n\n'
+            f"Context:\n"
+            f"- Current screen: {route}\n"
+            f"- Current list: {list_ctx}\n"
+            f"- Items on current list: {items_ctx}\n"
+            f"- User's language: {language_name}\n\n"
+            f"Transcript: \"{transcript}\"\n\n"
+            f"Respond with JSON matching exactly this schema (omit fields that don't "
+            f"apply to the chosen action):\n{schema}"
+        )
+
+        resp = requests.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": {**OLLAMA_SAMPLING, "num_predict": 300},
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("message", {}).get("content", "")
+        logger.info(f"Voice intent raw: {raw[:300]!r}")
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not m:
+                return {"action": "unknown", "message": "Sorry, I didn't get that."}
+            data = json.loads(m.group())
+
+        allowed = {"create_list", "add_items", "check_item", "uncheck_item",
+                   "delete_item", "clear_list", "unknown"}
+        action = str(data.get("action") or "unknown").strip()
+        if action not in allowed:
+            action = "unknown"
+
+        result: dict = {
+            "action": action,
+            "message": str(data.get("message") or "").strip() or None,
+        }
+        if action == "create_list":
+            result["list_name"] = str(data.get("list_name") or "").strip() or None
+        elif action == "add_items":
+            items = []
+            for it in data.get("items") or []:
+                if not isinstance(it, dict):
+                    continue
+                name = str(it.get("name") or "").strip()
+                if not name:
+                    continue
+                qty = it.get("quantity")
+                if qty is not None:
+                    qstr = str(qty).strip()
+                    qty = qstr if qstr and qstr.lower() != "null" else None
+                items.append({"name": name, "quantity": qty})
+            result["items"] = items
+        elif action in ("check_item", "uncheck_item", "delete_item"):
+            result["item_name"] = str(data.get("item_name") or "").strip() or None
+        # clear_list / unknown need no extra fields
+        return result
+
     def scan_list_from_image(
         self,
         image_bytes: bytes,
