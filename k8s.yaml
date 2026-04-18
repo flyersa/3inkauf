@@ -1,0 +1,177 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: 3inkauf
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: 3inkauf-secrets
+  namespace: 3inkauf
+type: Opaque
+stringData:
+  SECRET_KEY: "CHANGE-ME-generate-a-secret-key"
+  SMTP_HOST: "email-smtp.eu-west-1.amazonaws.com"
+  SMTP_PORT: "587"
+  SMTP_USER: "your-smtp-user"
+  SMTP_PASSWORD: "your-smtp-password"
+  SMTP_SENDER: "no-reply@yourdomain.com"
+  SMTP_USE_TLS: "true"
+  BASE_URL: "https://your-app.example.com"
+  DATABASE_URL: "sqlite+aiosqlite:////data/grocery.db"
+  ML_MODEL_NAME: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: 3inkauf-data
+  namespace: 3inkauf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: openebs-lvmpv
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: 3inkauf
+  labels:
+    app: 3inkauf
+    component: backend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: 3inkauf
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: 3inkauf
+        component: backend
+    spec:
+      containers:
+        - name: backend
+          image: flyersa/3inkauf:backend-latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: 3inkauf-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: 3inkauf-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: 3inkauf
+spec:
+  selector:
+    app: 3inkauf
+    component: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: 3inkauf
+  labels:
+    app: 3inkauf
+    component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: 3inkauf
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: 3inkauf
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: flyersa/3inkauf:frontend-latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: 3inkauf
+spec:
+  selector:
+    app: 3inkauf
+    component: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: 3inkauf
+  namespace: 3inkauf
+spec:
+  ingressClassName: cloudflare-tunnel
+  rules:
+    - host: your-app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

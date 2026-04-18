@@ -146,13 +146,77 @@ npm run dev
 
 The Vite dev server proxies `/api` and `/ws` to the backend on port 8000.
 
+## Docker Hub
+
+Pre-built images are available on Docker Hub:
+
+- **Backend**: `flyersa/3inkauf:backend-latest`
+- **Frontend**: `flyersa/3inkauf:frontend-latest`
+
 ## Kubernetes Deployment
 
-The app is designed to be k8s-ready:
-- Stateless containers (only the SQLite volume needs persistence)
-- Health endpoint at `GET /api/v1/health` for readiness/liveness probes
-- All secrets via environment variables (use Kubernetes Secrets)
-- For multi-pod scaling: migrate SQLite → PostgreSQL and add Redis for WebSocket fan-out
+A complete k8s manifest is included in `k8s.yaml`. It deploys the app with a single command.
+
+### Prerequisites
+- A Kubernetes cluster with an ingress controller
+- A storage class that supports `ReadWriteOnce` PVCs
+- `kubectl` configured for your cluster
+
+### Steps
+
+1. **Edit `k8s.yaml`** — update these values for your environment:
+   - `Secret` → set your own `SECRET_KEY`, `BASE_URL`, and SMTP credentials
+   - `PersistentVolumeClaim` → change `storageClassName` to match your cluster (default: `openebs-lvmpv`)
+   - `Ingress` → change `ingressClassName` and `host` to match your setup
+
+2. **Apply the manifest:**
+   ```bash
+   kubectl apply -f k8s.yaml
+   ```
+
+3. **Verify the deployment:**
+   ```bash
+   kubectl -n 3inkauf get pods,pvc,ingress
+   ```
+
+   You should see both pods `Running`, the PVC `Bound`, and the ingress with your host assigned.
+
+4. **Check backend health:**
+   ```bash
+   kubectl -n 3inkauf exec deploy/frontend -- curl -s http://backend:8000/api/v1/health
+   ```
+
+### What gets created
+
+| Resource | Name | Purpose |
+|----------|------|---------|
+| Namespace | `3inkauf` | Isolation |
+| Secret | `3inkauf-secrets` | Env vars (JWT key, SMTP, DB path) |
+| PVC | `3inkauf-data` | 2Gi volume for SQLite + image BLOBs |
+| Deployment | `backend` | FastAPI + ML model (1 replica, Recreate strategy) |
+| Deployment | `frontend` | Nginx serving SPA (1 replica) |
+| Service | `backend` | ClusterIP :8000 |
+| Service | `frontend` | ClusterIP :80 |
+| Ingress | `3inkauf` | Routes external traffic to frontend |
+
+### Architecture on k8s
+
+```
+[Ingress] → [frontend Service :80] → [Nginx pod]
+                                         ├── serves SPA (static files)
+                                         ├── proxies /api/* → [backend Service :8000]
+                                         └── proxies /ws/*  → [backend Service :8000]
+
+[backend pod] → [PVC /data] → SQLite database + image BLOBs
+                    └── ML model loaded in memory at startup
+```
+
+### Notes
+
+- **Single replica** for the backend is required since SQLite doesn't support concurrent writes from multiple processes. If you need horizontal scaling, migrate to PostgreSQL.
+- **Recreate strategy** on the backend deployment ensures the PVC is unmounted before a new pod starts (SQLite file locking).
+- All data (database + uploaded images) is stored in the PVC. Back up the PVC to preserve data.
+- The ML model (~120MB) is baked into the backend Docker image and loaded into memory on startup. First startup takes ~30 seconds.
 
 ## API Overview
 
