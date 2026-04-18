@@ -21,10 +21,12 @@ A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery 
 
 ### Smart Auto-Sort
 - One-tap AI button assigns uncategorized items to matching categories
-- Uses multilingual sentence embeddings (paraphrase-multilingual-MiniLM-L12-v2)
-- Works with German, English, and handles typos
-- **Learning system**: Save your manual categorizations as hints — future sorts use your corrections for 98% accuracy on learned items
-- Hints persist per user across all lists
+- **Two AI modes** (backend configuration, transparent to users):
+  - **Simple**: Built-in multilingual sentence embeddings (fastembed/ONNX, works offline, no external dependencies)
+  - **Advanced**: Ollama LLM integration (e.g., Gemma3:4b) — near-perfect accuracy for any language, food taxonomy fully understood
+- If `OLLAMA_URL` is configured, advanced mode is used automatically; otherwise falls back to simple
+- **Learning system**: Save your manual categorizations as hints — future sorts use your corrections first (98% confidence)
+- Hints persist per user across all lists and work with both AI modes
 
 ### User Management
 - Email + password registration (no other personal info required)
@@ -54,7 +56,8 @@ A lightweight, mobile-first Progressive Web App (PWA) for collaborative grocery 
 | ORM | SQLModel (SQLAlchemy + Pydantic) |
 | Auth | JWT (PyJWT) + bcrypt |
 | Email | aiosmtplib (any SMTP provider) |
-| ML | fastembed (ONNX Runtime), ~120MB model |
+| ML (simple) | fastembed (ONNX Runtime), ~120MB model, built-in |
+| ML (advanced) | Ollama API (e.g., Gemma3:4b), optional, near-perfect accuracy |
 | Frontend | Svelte 5, Vite |
 | CSS | Tailwind CSS |
 | Real-time | WebSockets (FastAPI native) |
@@ -103,6 +106,12 @@ SMTP_USE_TLS=true
 
 # ML model (default works out of the box)
 ML_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+# Ollama (optional - enables advanced AI mode for much better sorting accuracy)
+# If set, auto-sort uses the LLM instead of sentence embeddings
+# Recommended model: gemma3:4b (~3GB VRAM, fast, excellent multilingual)
+OLLAMA_URL=
+OLLAMA_MODEL=gemma3:4b
 ```
 
 Generate a secret key:
@@ -213,6 +222,7 @@ A complete k8s manifest is included in `k8s.yaml`. It deploys the app with a sin
 
 ### Notes
 
+- **Ollama integration**: Add `OLLAMA_URL` and `OLLAMA_MODEL` to the Secret to enable advanced AI sorting. The Ollama instance must be reachable from the backend pod.
 - **Single replica** for the backend is required since SQLite doesn't support concurrent writes from multiple processes. If you need horizontal scaling, migrate to PostgreSQL.
 - **Recreate strategy** on the backend deployment ensures the PVC is unmounted before a new pod starts (SQLite file locking).
 - All data (database + uploaded images) is stored in the PVC. Back up the PVC to preserve data.

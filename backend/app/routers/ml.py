@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.config import get_settings
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.list_item import ListItem
@@ -23,7 +24,10 @@ async def auto_sort(
 ):
     await get_list_with_access(list_id, current_user, session)
 
-    if not ml_service.model:
+    settings = get_settings()
+    use_advanced = bool(settings.ollama_url)
+
+    if not use_advanced and not ml_service.model:
         raise HTTPException(status_code=503, detail="ML model not loaded")
 
     # Only uncategorized items
@@ -44,13 +48,19 @@ async def auto_sort(
     hints_result = await session.execute(
         select(SortingHint).where(SortingHint.user_id == current_user.id)
     )
-    hints_list = hints_result.scalars().all()
-    hints = {h.item_name: h.category_name for h in hints_list}
+    hints = {h.item_name: h.category_name for h in hints_result.scalars().all()}
 
     item_dicts = [{"id": i.id, "name": i.name} for i in items]
     cat_dicts = [{"id": c.id, "name": c.name} for c in categories]
 
-    assignments = ml_service.auto_sort(item_dicts, cat_dicts, hints=hints)
+    if use_advanced:
+        assignments = ml_service.auto_sort_advanced(
+            item_dicts, cat_dicts, hints=hints,
+            ollama_url=settings.ollama_url,
+            ollama_model=settings.ollama_model,
+        )
+    else:
+        assignments = ml_service.auto_sort_simple(item_dicts, cat_dicts, hints=hints)
 
     return AutoSortResponse(
         assignments=[
@@ -103,7 +113,6 @@ async def save_sorting_hints(
     """Save current item->category mappings as sorting hints for future auto-sort."""
     await get_list_with_access(list_id, current_user, session)
 
-    # Get all categorized items with their category names
     result = await session.execute(
         select(ListItem, Category)
         .join(Category, Category.id == ListItem.category_id)
@@ -114,8 +123,6 @@ async def save_sorting_hints(
     saved = 0
     for item, category in pairs:
         item_name_lower = item.name.lower().strip()
-
-        # Upsert: check if hint exists, update or create
         existing = await session.execute(
             select(SortingHint).where(
                 SortingHint.user_id == current_user.id,

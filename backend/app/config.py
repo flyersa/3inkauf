@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # ML
     ml_model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
+    # Ollama (advanced AI mode)
+    ollama_url: str = ""
+    ollama_model: str = "gemma3:4b"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
