@@ -1,0 +1,26 @@
+[project]
+name = "grocery-pwa-backend"
+version = "0.1.0"
+description = "Grocery Shopping PWA Backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]==0.115.12",
+    "uvicorn[standard]==0.34.2",
+    "sqlmodel==0.0.24",
+    "aiosqlite==0.21.0",
+    "alembic==1.15.2",
+    "pyjwt==2.10.1",
+    "passlib[bcrypt]==1.7.4",
+    "bcrypt==4.3.0",
+    "aiosmtplib==3.0.2",
+    "pydantic-settings==2.9.1",
+    "fastembed==0.6.1",
+    "numpy>=1.26.0",
+    "slowapi==0.1.9",
+    "python-multipart==0.0.20",
+    "jinja2==3.1.6",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
