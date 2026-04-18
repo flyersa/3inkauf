@@ -369,13 +369,31 @@ class MLService:
             raise RuntimeError("Ollama URL not configured")
 
         b64 = base64.b64encode(image_bytes).decode("ascii")
+
+        # Give gemma an explicit target vocabulary in the user's language so it
+        # doesn't default to English category names.
+        is_german = language.lower().startswith("german") or language.lower().startswith("de")
+        if is_german:
+            cat_examples = (
+                "Obst & Gemüse, Milchprodukte, Backwaren, Fleisch & Wurst, "
+                "Getränke, Tiefkühl, Süßwaren, Haushalt, Sonstiges"
+            )
+        else:
+            cat_examples = (
+                "Produce, Dairy, Bakery, Meat, Beverages, Frozen, Sweets, "
+                "Household, Other"
+            )
+
         prompt = (
             "You are reading a shopping list from a photograph (handwritten or printed).\n\n"
+            f"OUTPUT LANGUAGE FOR CATEGORIES: {language}. "
+            f"Use category names like: {cat_examples}. "
+            f"Do NOT translate the category names into English if the language is German.\n\n"
             "For every item literally visible on the list, output one JSON entry with:\n"
             "- `name`: the item as written, keeping its original language.\n"
             "- `quantity`: any quantity written next to the item (e.g. \"2x\", \"500g\", "
             "\"1 Liter\"); use null if none.\n"
-            f"- `category`: a supermarket category written in {language} — reuse the same "
+            f"- `category`: a supermarket category written in {language}. Reuse the same "
             "category across similar items; aim for 4-8 categories total.\n\n"
             "Rules:\n"
             "- Do NOT add items that are not written in the photo.\n"
