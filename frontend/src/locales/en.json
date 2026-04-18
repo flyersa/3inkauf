@@ -1,5 +1,5 @@
 {
-  "app.title": "Shopping List",
+  "app.title": "3inkauf",
   "nav.lists": "My Lists",
   "nav.settings": "Settings",
   "nav.logout": "Logout",
@@ -19,6 +19,15 @@
   "category.new": "New Category",
   "category.new.placeholder": "Category name",
   "category.delete.confirm": "Delete category? Items will not be deleted.",
+  "category.rename": "Rename category",
+  "category.rename.placeholder": "New name",
+  "item.photo": "Add photo",
+  "item.photo.remove": "Remove photo",
+  "item.photo.camera": "Take photo",
+  "item.photo.gallery": "Choose from gallery",
+  "sort.save.hints": "Save AI recommendations",
+  "sort.save.hints.done": "Recommendations saved!",
+  "sort.save.hints.description": "Save current assignments as hints for future sorting",
   "sort.auto": "Auto-Sort",
   "sort.auto.description": "AI assigns items to categories",
   "sort.auto.apply": "Apply assignments",
@@ -38,6 +47,7 @@
   "auth.reset.new": "New password",
   "auth.reset.success": "Password changed successfully",
   "auth.reset.sent": "If the email exists, a reset link has been sent",
+  "auth.remember": "Remember me",
   "auth.no.account": "No account yet?",
   "auth.has.account": "Already have an account?",
   "share.invite": "Invite by email",
@@ -60,5 +70,7 @@
   "btn.cancel": "Cancel",
   "btn.delete": "Delete",
   "btn.close": "Close",
-  "btn.back": "Back"
+  "btn.back": "Back",
+  "list.clear.items": "Clear all items",
+  "list.clear.items.confirm": "Really delete all items? Categories will be kept."
 }

@@ -1,11 +1,12 @@
 <script>
   import { t, locale, availableLocales } from '../lib/i18n.js';
-  import { login } from '../lib/auth.js';
+  import { login, setRememberMe } from '../lib/auth.js';
   import { push } from 'svelte-spa-router';
   import { showToast } from '../lib/store.js';
 
   let email = $state('');
   let password = $state('');
+  let rememberMe = $state(true);
   let loading = $state(false);
   let error = $state('');
 
@@ -14,6 +15,7 @@
     loading = true;
     error = '';
     try {
+      setRememberMe(rememberMe);
       await login(email, password);
       push('/');
     } catch (err) {
@@ -27,7 +29,8 @@
 <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-blue-50 to-indigo-100">
   <div class="card w-full max-w-sm">
     <div class="text-center mb-6">
-      <h1 class="text-2xl font-bold text-blue-600">🛒 {$t('app.title')}</h1>
+      <img src="/icons/logo.png" alt="3inkauf" class="w-20 h-20 mx-auto rounded-2xl shadow-sm mb-3" />
+      <h1 class="text-2xl font-bold text-blue-600">3inkauf</h1>
     </div>
 
     <form onsubmit={handleLogin} class="space-y-4">
@@ -44,6 +47,11 @@
         <label for="password" class="block text-sm font-medium text-gray-700 mb-1">{$t('auth.password')}</label>
         <input id="password" type="password" bind:value={password} required class="input-field" autocomplete="current-password" />
       </div>
+
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" bind:checked={rememberMe} class="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500" />
+        <span class="text-sm text-gray-600">{$t('auth.remember')}</span>
+      </label>
 
       <button type="submit" disabled={loading} class="btn-primary w-full">
         {loading ? '...' : $t('auth.login')}

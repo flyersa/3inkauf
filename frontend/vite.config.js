@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png'],
       manifest: {
-        name: 'Einkaufsliste',
-        short_name: 'Einkauf',
-        description: 'Gemeinsame Einkaufslisten',
+        name: '3inkauf',
+        short_name: '3inkauf',
+        description: 'Gemeinsame 3inkaufn',
         start_url: '/',
         display: 'standalone',
         background_color: '#ffffff',

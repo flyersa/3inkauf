@@ -40,6 +40,7 @@ class ItemResponse(BaseModel):
     quantity: Optional[str]
     checked: bool
     sort_order: int
+    image_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,5 +1,5 @@
 {
-  "app.title": "Einkaufsliste",
+  "app.title": "3inkauf",
   "nav.lists": "Meine Listen",
   "nav.settings": "Einstellungen",
   "nav.logout": "Abmelden",
@@ -19,6 +19,15 @@
   "category.new": "Neue Kategorie",
   "category.new.placeholder": "Kategoriename",
   "category.delete.confirm": "Kategorie löschen? Artikel werden nicht gelöscht.",
+  "category.rename": "Kategorie umbenennen",
+  "category.rename.placeholder": "Neuer Name",
+  "item.photo": "Foto hinzufügen",
+  "item.photo.remove": "Foto entfernen",
+  "item.photo.camera": "Foto aufnehmen",
+  "item.photo.gallery": "Aus Galerie wählen",
+  "sort.save.hints": "AI Empfehlung speichern",
+  "sort.save.hints.done": "Empfehlungen gespeichert!",
+  "sort.save.hints.description": "Aktuelle Zuordnungen als Vorlage für zukünftige Sortierungen speichern",
   "sort.auto": "Auto-Sortieren",
   "sort.auto.description": "KI ordnet Artikel den Kategorien zu",
   "sort.auto.apply": "Zuordnung übernehmen",
@@ -38,6 +47,7 @@
   "auth.reset.new": "Neues Passwort",
   "auth.reset.success": "Passwort erfolgreich geändert",
   "auth.reset.sent": "Falls die E-Mail existiert, wurde ein Link gesendet",
+  "auth.remember": "Angemeldet bleiben",
   "auth.no.account": "Noch kein Konto?",
   "auth.has.account": "Bereits ein Konto?",
   "share.invite": "Per E-Mail einladen",
@@ -60,5 +70,7 @@
   "btn.cancel": "Abbrechen",
   "btn.delete": "Löschen",
   "btn.close": "Schließen",
-  "btn.back": "Zurück"
+  "btn.back": "Zurück",
+  "list.clear.items": "Alle Artikel löschen",
+  "list.clear.items.confirm": "Wirklich alle Artikel löschen? Kategorien bleiben erhalten."
 }

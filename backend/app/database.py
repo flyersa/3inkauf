@@ -1,4 +1,3 @@
-import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
@@ -6,9 +5,6 @@ from app.config import get_settings
 
 
 settings = get_settings()
-
-# Ensure data directory exists
-os.makedirs("data", exist_ok=True)
 
 engine = create_async_engine(
     settings.database_url,
@@ -26,6 +22,17 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.exec_driver_sql("PRAGMA journal_mode=WAL")
         await conn.exec_driver_sql("PRAGMA busy_timeout=5000")
+    # Migrate existing databases
+    await migrate_db()
+
+
+async def migrate_db():
+    """Add columns that may not exist in older databases."""
+    async with engine.begin() as conn:
+        try:
+            await conn.exec_driver_sql("ALTER TABLE list_items ADD COLUMN image_path TEXT")
+        except Exception:
+            pass
 
 
 async def get_session():

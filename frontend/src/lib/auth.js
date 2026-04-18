@@ -1,7 +1,15 @@
 import { api, setTokens, clearTokens } from './api.js';
 
+export function setRememberMe(remember) {
+  if (remember) {
+    localStorage.setItem('remember_me', 'true');
+  } else {
+    localStorage.removeItem('remember_me');
+  }
+}
+
 export function isLoggedIn() {
-  return !!localStorage.getItem('access_token');
+  return !!(localStorage.getItem('access_token') || sessionStorage.getItem('access_token'));
 }
 
 export async function login(email, password) {
@@ -11,6 +19,8 @@ export async function login(email, password) {
 }
 
 export async function register(email, password, displayName, locale = 'de') {
+  // Registration always remembers (user just created account)
+  setRememberMe(true);
   const data = await api.post('/auth/register', {
     email, password, display_name: displayName, locale,
   });
@@ -36,5 +46,6 @@ export async function updateProfile(data) {
 
 export function logout() {
   clearTokens();
+  localStorage.removeItem('remember_me');
   window.location.hash = '#/login';
 }

@@ -28,3 +28,6 @@ Thumbs.db
 
 # ML model cache
 .cache/
+backend/data/
+*.swp
+*.swo

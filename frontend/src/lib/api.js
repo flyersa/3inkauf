@@ -1,17 +1,29 @@
 const BASE = '/api/v1';
 
+function getStorage() {
+  // If remember_me flag is set, use localStorage (persists); otherwise sessionStorage
+  return localStorage.getItem('remember_me') === 'true' ? localStorage : sessionStorage;
+}
+
 function getToken() {
-  return localStorage.getItem('access_token');
+  return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+}
+
+function getRefreshToken() {
+  return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
 }
 
 export function setTokens(access, refresh) {
-  localStorage.setItem('access_token', access);
-  localStorage.setItem('refresh_token', refresh);
+  const store = getStorage();
+  store.setItem('access_token', access);
+  store.setItem('refresh_token', refresh);
 }
 
 export function clearTokens() {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
+  sessionStorage.removeItem('access_token');
+  sessionStorage.removeItem('refresh_token');
 }
 
 async function request(path, options = {}) {
@@ -22,8 +34,7 @@ async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
 
   if (res.status === 401) {
-    // Try refresh
-    const refreshToken = localStorage.getItem('refresh_token');
+    const refreshToken = getRefreshToken();
     if (refreshToken && !options._retried) {
       try {
         const refreshRes = await fetch(`${BASE}/auth/refresh?token=${encodeURIComponent(refreshToken)}`, {

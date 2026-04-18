@@ -26,7 +26,9 @@ async def enrich_item(item: ListItem, session: AsyncSession) -> ItemResponse:
         added_by_name=user.display_name if user else "Unknown",
         added_by_color=user.color if user else "#999999",
         name=item.name, quantity=item.quantity, checked=item.checked,
-        sort_order=item.sort_order, created_at=item.created_at,
+        sort_order=item.sort_order,
+        image_url=("/api/v1/images/" + item.image_path) if item.image_path else None,
+        created_at=item.created_at,
         updated_at=item.updated_at,
     )
 
@@ -50,7 +52,9 @@ async def get_items_enriched(list_id: str, session: AsyncSession) -> list[ItemRe
             added_by_name=users_map.get(item.added_by_id, default_user).display_name,
             added_by_color=users_map.get(item.added_by_id, default_user).color,
             name=item.name, quantity=item.quantity, checked=item.checked,
-            sort_order=item.sort_order, created_at=item.created_at,
+            sort_order=item.sort_order,
+        image_url=("/api/v1/images/" + item.image_path) if item.image_path else None,
+        created_at=item.created_at,
             updated_at=item.updated_at,
         )
         for item in items
@@ -102,6 +106,35 @@ async def create_item(
     }, exclude_user=current_user.id)
 
     return response
+
+
+# IMPORTANT: /reorder MUST be before /{item_id} to avoid route conflict
+@router.patch("/reorder", response_model=list[ItemResponse])
+async def reorder_items(
+    list_id: str,
+    req: ReorderItemsRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await get_list_with_access(list_id, current_user, session)
+
+    for i, iid in enumerate(req.item_ids):
+        result = await session.execute(
+            select(ListItem).where(ListItem.id == iid, ListItem.list_id == list_id)
+        )
+        item = result.scalar_one_or_none()
+        if item:
+            item.sort_order = (i + 1) * 10
+            session.add(item)
+
+    await session.commit()
+
+    await manager.broadcast(list_id, {
+        "type": "items_reordered",
+        "item_ids": req.item_ids,
+    }, exclude_user=current_user.id)
+
+    return await get_items_enriched(list_id, session)
 
 
 @router.patch("/{item_id}", response_model=ItemResponse)
@@ -204,29 +237,23 @@ async def delete_item(
     }, exclude_user=current_user.id)
 
 
-@router.patch("/reorder", response_model=list[ItemResponse])
-async def reorder_items(
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_all_items(
     list_id: str,
-    req: ReorderItemsRequest,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    """Delete all items from a list (keeps categories)."""
     await get_list_with_access(list_id, current_user, session)
-
-    for i, iid in enumerate(req.item_ids):
-        result = await session.execute(
-            select(ListItem).where(ListItem.id == iid, ListItem.list_id == list_id)
-        )
-        item = result.scalar_one_or_none()
-        if item:
-            item.sort_order = (i + 1) * 10
-            session.add(item)
-
+    result = await session.execute(
+        select(ListItem).where(ListItem.list_id == list_id)
+    )
+    items = result.scalars().all()
+    for item in items:
+        await session.delete(item)
     await session.commit()
 
     await manager.broadcast(list_id, {
-        "type": "items_reordered",
-        "item_ids": req.item_ids,
+        "type": "items_cleared",
+        "user": {"id": current_user.id, "display_name": current_user.display_name},
     }, exclude_user=current_user.id)
-
-    return await get_items_enriched(list_id, session)

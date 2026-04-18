@@ -32,7 +32,8 @@
 <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-blue-50 to-indigo-100">
   <div class="card w-full max-w-sm">
     <div class="text-center mb-6">
-      <h1 class="text-2xl font-bold text-blue-600">🛒 {$t('app.title')}</h1>
+      <img src="/icons/logo.png" alt="3inkauf" class="w-16 h-16 mx-auto rounded-2xl shadow-sm mb-2" />
+      <h1 class="text-2xl font-bold text-blue-600">3inkauf</h1>
       <p class="text-gray-500 text-sm mt-1">{$t('auth.register')}</p>
     </div>
 

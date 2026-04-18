@@ -41,7 +41,6 @@ async def create_category(
 ):
     await get_list_with_access(list_id, current_user, session)
 
-    # Get next sort order
     result = await session.execute(
         select(Category.sort_order).where(Category.list_id == list_id)
         .order_by(Category.sort_order.desc()).limit(1)
@@ -59,6 +58,41 @@ async def create_category(
     }, exclude_user=current_user.id)
 
     return cat
+
+
+# IMPORTANT: /reorder MUST be before /{category_id} to avoid route conflict
+@router.patch("/reorder", response_model=list[CategoryResponse])
+async def reorder_categories(
+    list_id: str,
+    req: ReorderCategoriesRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await get_list_with_access(list_id, current_user, session)
+
+    for i, cat_id in enumerate(req.category_ids):
+        result = await session.execute(
+            select(Category).where(Category.id == cat_id, Category.list_id == list_id)
+        )
+        cat = result.scalar_one_or_none()
+        if cat:
+            cat.sort_order = (i + 1) * 10
+            session.add(cat)
+
+    await session.commit()
+
+    result = await session.execute(
+        select(Category).where(Category.list_id == list_id)
+        .order_by(Category.sort_order)
+    )
+    categories = result.scalars().all()
+
+    await manager.broadcast(list_id, {
+        "type": "categories_reordered",
+        "category_ids": req.category_ids,
+    }, exclude_user=current_user.id)
+
+    return categories
 
 
 @router.patch("/{category_id}", response_model=CategoryResponse)
@@ -109,7 +143,6 @@ async def delete_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    # Unassign items from this category
     items_result = await session.execute(
         select(ListItem).where(ListItem.category_id == category_id)
     )
@@ -124,37 +157,3 @@ async def delete_category(
         "type": "category_removed",
         "category_id": category_id,
     }, exclude_user=current_user.id)
-
-
-@router.patch("/reorder", response_model=list[CategoryResponse])
-async def reorder_categories(
-    list_id: str,
-    req: ReorderCategoriesRequest,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-):
-    await get_list_with_access(list_id, current_user, session)
-
-    for i, cat_id in enumerate(req.category_ids):
-        result = await session.execute(
-            select(Category).where(Category.id == cat_id, Category.list_id == list_id)
-        )
-        cat = result.scalar_one_or_none()
-        if cat:
-            cat.sort_order = (i + 1) * 10
-            session.add(cat)
-
-    await session.commit()
-
-    result = await session.execute(
-        select(Category).where(Category.list_id == list_id)
-        .order_by(Category.sort_order)
-    )
-    categories = result.scalars().all()
-
-    await manager.broadcast(list_id, {
-        "type": "categories_reordered",
-        "category_ids": req.category_ids,
-    }, exclude_user=current_user.id)
-
-    return categories

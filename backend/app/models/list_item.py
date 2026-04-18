@@ -15,5 +15,6 @@ class ListItem(SQLModel, table=True):
     quantity: Optional[str] = Field(default=None, max_length=50)
     checked: bool = Field(default=False)
     sort_order: int = Field(default=0)
+    image_path: Optional[str] = Field(default=None, max_length=500)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

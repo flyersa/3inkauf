@@ -6,7 +6,10 @@
 
 <nav class="bg-white border-b border-gray-200 sticky top-0 z-40">
   <div class="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
-    <a href="#/" class="font-bold text-blue-600 text-lg">🛒 {$t('app.title')}</a>
+    <a href="#/" class="flex items-center gap-2">
+      <img src="/icons/logo.png" alt="3inkauf" class="h-8 w-8 rounded" />
+      <span class="font-bold text-blue-600 text-lg">3inkauf</span>
+    </a>
     <div class="flex items-center gap-2">
       <select
         value={$locale}
