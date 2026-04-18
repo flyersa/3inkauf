@@ -91,5 +91,14 @@
   "bonus.leave": "Nicht mehr ansehen",
   "bonus.leave.confirm": "Diese geteilte Karte aus deiner Ansicht entfernen? Der Besitzer kann sie erneut teilen.",
   "list.leave": "Nicht mehr teilen",
-  "list.leave.confirm": "Diese geteilte Liste aus deiner Ansicht entfernen? Der Besitzer kann sie erneut teilen."
+  "list.leave.confirm": "Diese geteilte Liste aus deiner Ansicht entfernen? Der Besitzer kann sie erneut teilen.",
+  "scan.tooltip": "Einkaufszettel abfotografieren",
+  "scan.name.required": "Bitte zuerst einen Listennamen eingeben",
+  "scan.processing": "KI liest deinen Zettel…",
+  "scan.preview.title": "Erkannte Artikel prüfen",
+  "scan.empty": "Keine Artikel erkannt",
+  "scan.all": "Alle",
+  "scan.none": "Keine",
+  "scan.save": "Liste erstellen",
+  "scan.saved": "Liste aus Foto erstellt"
 }

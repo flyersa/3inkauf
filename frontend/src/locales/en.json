@@ -91,5 +91,14 @@
   "bonus.leave": "Stop viewing",
   "bonus.leave.confirm": "Remove this shared card from your view? The owner can re-share it.",
   "list.leave": "Leave list",
-  "list.leave.confirm": "Remove this shared list from your view? The owner can re-share it."
+  "list.leave.confirm": "Remove this shared list from your view? The owner can re-share it.",
+  "scan.tooltip": "Scan a paper shopping list",
+  "scan.name.required": "Please enter a list name first",
+  "scan.processing": "AI is reading your list…",
+  "scan.preview.title": "Review detected items",
+  "scan.empty": "No items detected",
+  "scan.all": "All",
+  "scan.none": "None",
+  "scan.save": "Create list",
+  "scan.saved": "List created from photo"
 }

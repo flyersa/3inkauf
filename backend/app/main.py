@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.core.security import decode_token
 from app.core.websocket import manager
-from app.routers import auth, lists, categories, items, sharing, ml, images, bonus_cards
+from app.routers import auth, lists, categories, items, sharing, ml, images, bonus_cards, lists_scan
 from app.services.ml_service import ml_service
 
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +61,7 @@ app.include_router(sharing.router, prefix="/api/v1")
 app.include_router(ml.router, prefix="/api/v1")
 app.include_router(images.router, prefix="/api/v1")
 app.include_router(bonus_cards.router, prefix="/api/v1")
+app.include_router(lists_scan.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health")
@@ -68,6 +69,7 @@ async def health():
     return {
         "status": "ok",
         "model_loaded": ml_service.model is not None,
+        "ollama_enabled": bool(settings.ollama_url),
     }
 
 

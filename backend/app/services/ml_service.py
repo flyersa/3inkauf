@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import logging
@@ -6,6 +7,22 @@ import requests
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Per the gemma4 model card, the authors recommend these sampling parameters
+# across all use cases. We apply them to every Ollama call so the same tuning
+# is used for auto-sort and for paper-list scans.
+OLLAMA_SAMPLING = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64,
+    # 8K context is plenty for our prompts and leaves VRAM headroom for KV cache
+    # on small GPUs (e.g. RTX A2000 12GB running a 9.6GB model).
+    "num_ctx": 8192,
+}
+
+# Keep the model resident in VRAM between requests. We're the only model on
+# the Ollama host so we can afford a long keep-alive and avoid cold reloads.
+OLLAMA_KEEP_ALIVE = "1h"
 
 
 class MLService:
@@ -160,7 +177,9 @@ class MLService:
                             },
                         ],
                         "stream": False,
-                        "options": {"temperature": 0},
+                        "think": False,
+                        "keep_alive": OLLAMA_KEEP_ALIVE,
+                        "options": OLLAMA_SAMPLING,
                     },
                     timeout=30,
                 )
@@ -198,6 +217,84 @@ class MLService:
     # Backward compat
     def auto_sort(self, items, categories, hints=None, threshold=0.25):
         return self.auto_sort_simple(items, categories, hints, threshold)
+
+    def scan_list_from_image(
+        self,
+        image_bytes: bytes,
+        language: str = "English",
+        ollama_url: str = "",
+        ollama_model: str = "gemma4:e4b",
+    ) -> dict:
+        """Single-pass scan: gemma4:e4b transcribes the photo AND assigns
+        categories in one call. Much faster than two calls and accurate enough
+        with a model this strong."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        prompt = (
+            "You are reading a shopping list from a photograph (handwritten or printed).\n\n"
+            "For every item literally visible on the list, output one JSON entry with:\n"
+            "- `name`: the item as written, keeping its original language.\n"
+            "- `quantity`: any quantity written next to the item (e.g. \"2x\", \"500g\", "
+            "\"1 Liter\"); use null if none.\n"
+            f"- `category`: a supermarket category written in {language} — reuse the same "
+            "category across similar items; aim for 4-8 categories total.\n\n"
+            "Rules:\n"
+            "- Do NOT add items that are not written in the photo.\n"
+            "- Do NOT autocomplete, expand, or guess unclear words — skip them.\n"
+            "- If the photo is not a shopping list or has no items, return empty arrays.\n\n"
+            "Respond with JSON ONLY matching:\n"
+            '{"categories": ["<cat>", ...], '
+            '"items": [{"name": "<item>", "quantity": "<qty-or-null>", "category": "<cat>"}]}'
+        )
+        resp = requests.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+                "stream": False,
+                "think": False,
+                "format": "json",
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": OLLAMA_SAMPLING,
+            },
+            timeout=180,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("message", {}).get("content", "")
+        logger.info(f"Scan raw output ({len(raw)} chars): {raw[:400]!r}")
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not m:
+                raise RuntimeError(f"Model returned non-JSON: {raw[:200]}")
+            data = json.loads(m.group())
+
+        categories = [
+            c.strip() for c in (data.get("categories") or [])
+            if isinstance(c, str) and c.strip()
+        ]
+        cleaned_items = []
+        seen_cats = set(c.lower() for c in categories)
+        for it in data.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get("name") or "").strip()
+            if not name:
+                continue
+            qty = it.get("quantity")
+            if qty is not None:
+                qty_str = str(qty).strip()
+                qty = qty_str if qty_str and qty_str.lower() != "null" else None
+            cat = str(it.get("category") or "").strip() or None
+            if cat and cat.lower() not in seen_cats:
+                categories.append(cat)
+                seen_cats.add(cat.lower())
+            cleaned_items.append({"name": name, "quantity": qty, "category": cat})
+        return {"categories": categories, "items": cleaned_items}
 
 
 ml_service = MLService()
