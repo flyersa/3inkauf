@@ -7,6 +7,8 @@ from sqlmodel import select
 
 from app.database import get_session
 from app.core.deps import get_current_user
+from app.core.image_validation import validate_image
+from app.core.security import signed_image_url
 from app.models.user import User
 from app.models.bonus_card import BonusCard
 from app.models.bonus_card_share import BonusCardShare
@@ -31,7 +33,7 @@ def to_response(
         id=card.id,
         name=card.name,
         description=card.description,
-        image_url=(f"/api/v1/images/{card.image_id}") if card.image_id else None,
+        image_url=signed_image_url(card.image_id) if card.image_id else None,
         sort_order=card.sort_order,
         is_owner=is_owner,
         owner_display_name=owner_display_name,
@@ -167,11 +169,11 @@ async def upload_bonus_card_image(
     session: AsyncSession = Depends(get_session),
 ):
     card, _ = await _get_card_with_access(card_id, current_user, session, require_owner=True)
-    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are allowed")
     content = await file.read()
     if len(content) > MAX_SIZE:
         raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
+    # Validate real image bytes — Content-Type header is attacker-controlled.
+    actual_mime = validate_image(content)
 
     if card.image_id:
         old_img = await session.execute(
@@ -182,7 +184,7 @@ async def upload_bonus_card_image(
             await session.delete(old)
 
     image_id = uuid.uuid4().hex
-    img = ItemImage(id=image_id, content_type=file.content_type, data=content)
+    img = ItemImage(id=image_id, content_type=actual_mime, data=content)
     session.add(img)
     card.image_id = image_id
     card.updated_at = datetime.now(timezone.utc)

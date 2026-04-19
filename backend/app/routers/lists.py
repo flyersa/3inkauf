@@ -17,9 +17,19 @@ router = APIRouter(prefix="/lists", tags=["lists"])
 
 
 async def get_list_with_access(
-    list_id: str, user: User, session: AsyncSession, require_owner: bool = False
+    list_id: str,
+    user: User,
+    session: AsyncSession,
+    require_owner: bool = False,
+    require_edit: bool = False,
 ) -> ShoppingList:
-    """Get a list and verify user has access."""
+    """Get a list and verify user has access.
+
+    - ``require_owner=True``: reject non-owners with 403 (used for share management,
+      delete-list, etc.).
+    - ``require_edit=True``: reject view-only shared users with 403 (used for any
+      endpoint that mutates list content: items, categories, rename, reorder).
+    """
     result = await session.execute(select(ShoppingList).where(ShoppingList.id == list_id))
     lst = result.scalar_one_or_none()
     if not lst:
@@ -35,8 +45,15 @@ async def get_list_with_access(
     share_result = await session.execute(
         select(ListShare).where(ListShare.list_id == list_id, ListShare.user_id == user.id)
     )
-    if not share_result.scalar_one_or_none():
+    share = share_result.scalar_one_or_none()
+    if not share:
         raise HTTPException(status_code=404, detail="List not found")
+
+    if require_edit and (share.permission or "").lower() != "edit":
+        raise HTTPException(
+            status_code=403,
+            detail="You only have view access to this list",
+        )
 
     return lst
 
@@ -171,7 +188,7 @@ async def update_list(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    lst = await get_list_with_access(list_id, current_user, session)
+    lst = await get_list_with_access(list_id, current_user, session, require_edit=True)
     if req.name is not None:
         new_key = req.name.strip().lower()
         current_key = (lst.name or "").strip().lower()

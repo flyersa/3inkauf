@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -11,6 +11,7 @@ from app.core.security import (
     decode_token,
 )
 from app.core.deps import get_current_user
+from app.core.ratelimit import limiter
 from app.models.user import User, PasswordResetToken
 from app.models.sorting_hint import SortingHint
 from app.schemas.auth import (
@@ -25,7 +26,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(req: RegisterRequest, session: AsyncSession = Depends(get_session)):
+@limiter.limit("6/minute")
+async def register(request: Request, req: RegisterRequest, session: AsyncSession = Depends(get_session)):
     # Check if email already exists
     result = await session.execute(select(User).where(User.email == req.email))
     if result.scalar_one_or_none():
@@ -49,7 +51,8 @@ async def register(req: RegisterRequest, session: AsyncSession = Depends(get_ses
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest, session: AsyncSession = Depends(get_session)):
+@limiter.limit("6/minute")
+async def login(request: Request, req: LoginRequest, session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):
@@ -83,7 +86,8 @@ async def refresh_token(token: str, session: AsyncSession = Depends(get_session)
 
 
 @router.post("/forgot-password")
-async def forgot_password(req: ForgotPasswordRequest, session: AsyncSession = Depends(get_session)):
+@limiter.limit("2/minute")
+async def forgot_password(request: Request, req: ForgotPasswordRequest, session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
 

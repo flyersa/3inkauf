@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     admin_username: str = ""
     admin_password: str = ""
 
+    # CORS — comma-separated list of allowed origins. Empty string means allow
+    # all (dev fallback). Always list the exact public URL(s) in prod.
+    cors_origins: str = ""
+
+    # Signed image URLs — how long image URLs returned in API responses stay
+    # valid before clients have to re-fetch the parent list/card (which issues
+    # fresh URLs). Kept deliberately short so leaked URLs stop working quickly.
+    image_url_ttl_seconds: int = 3600
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

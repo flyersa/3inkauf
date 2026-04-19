@@ -4,9 +4,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
 from app.database import init_db
+from app.core.ratelimit import limiter
 from app.core.security import decode_token
 from app.core.websocket import manager
 from app.routers import auth, lists, categories, items, sharing, ml, images, bonus_cards, lists_scan, voice, admin, recipes
@@ -43,13 +46,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS — origins come from the CORS_ORIGINS env var (comma-separated).
+# If unset, fall back to wildcard + no credentials (safe dev default: browsers
+# ignore credentialed requests to a wildcard origin per the CORS spec).
+_origins_raw = [o.strip() for o in (settings.cors_origins or "").split(",") if o.strip()]
+_allowed_origins = _origins_raw or ["*"]
+_allow_credentials = bool(_origins_raw)  # credentials only when we pinned origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=_allow_credentials,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+logger.info(
+    "CORS: allowed_origins=%s allow_credentials=%s",
+    _allowed_origins, _allow_credentials,
 )
 
 # Routers

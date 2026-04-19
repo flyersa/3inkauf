@@ -39,7 +39,7 @@ async def create_category(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
 
     result = await session.execute(
         select(Category.sort_order).where(Category.list_id == list_id)
@@ -68,7 +68,7 @@ async def reorder_categories(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
 
     for i, cat_id in enumerate(req.category_ids):
         result = await session.execute(
@@ -103,7 +103,7 @@ async def update_category(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
     result = await session.execute(
         select(Category).where(Category.id == category_id, Category.list_id == list_id)
     )
@@ -135,7 +135,7 @@ async def delete_category(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
     result = await session.execute(
         select(Category).where(Category.id == category_id, Category.list_id == list_id)
     )

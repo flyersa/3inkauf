@@ -87,13 +87,38 @@ async def apply_auto_sort(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
+
+    # Validate that every category_id the client wants to assign actually
+    # belongs to THIS list. Without this, an attacker can cross-assign items
+    # to categories owned by a different list (IDOR-class bug).
+    requested_cat_ids = {
+        a.get("category_id") for a in req.assignments if a.get("category_id")
+    }
+    valid_cat_ids: set[str] = set()
+    if requested_cat_ids:
+        cat_rows = await session.execute(
+            select(Category.id).where(
+                Category.list_id == list_id,
+                Category.id.in_(requested_cat_ids),
+            )
+        )
+        valid_cat_ids = {row[0] for row in cat_rows.all()}
+        invalid = requested_cat_ids - valid_cat_ids
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail="One or more category IDs do not belong to this list",
+            )
 
     updated = 0
     for assignment in req.assignments:
         item_id = assignment.get("item_id")
         category_id = assignment.get("category_id")
         if not item_id or not category_id:
+            continue
+        # Redundant safety net — category_id was already verified above.
+        if category_id not in valid_cat_ids:
             continue
         result = await session.execute(
             select(ListItem).where(ListItem.id == item_id, ListItem.list_id == list_id)

@@ -9,7 +9,7 @@ Two flavors:
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -17,6 +17,7 @@ from sqlmodel import select
 from app.config import get_settings
 from app.core import runtime_config
 from app.core.deps import get_current_user
+from app.core.ratelimit import limiter
 from app.database import get_session
 from app.models.list_item import ListItem
 from app.models.user import User
@@ -145,7 +146,9 @@ async def full_recipe(
 
 
 @router.post("/recipes/email")
+@limiter.limit("20/hour")
 async def email_recipe(
+    request: Request,
     req: RecipeEmailRequest,
     current_user: User = Depends(get_current_user),
 ):

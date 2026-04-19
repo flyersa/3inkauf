@@ -13,6 +13,8 @@ from app.database import get_session
 from app.models.user import User
 from app.models.list_item import ListItem
 from app.models.item_image import ItemImage
+from app.core.security import signed_image_url
+from app.core.image_validation import validate_image
 from app.routers.lists import get_list_with_access
 from app.schemas.list_item import (
     CreateItemRequest, UpdateItemRequest, ReorderItemsRequest, ItemResponse,
@@ -36,7 +38,7 @@ async def enrich_item(item: ListItem, session: AsyncSession) -> ItemResponse:
         added_by_color=user.color if user else "#999999",
         name=item.name, quantity=item.quantity, checked=item.checked,
         sort_order=item.sort_order,
-        image_url=("/api/v1/images/" + item.image_path) if item.image_path else None,
+        image_url=signed_image_url(item.image_path) if item.image_path else None,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -62,7 +64,7 @@ async def get_items_enriched(list_id: str, session: AsyncSession) -> list[ItemRe
             added_by_color=users_map.get(item.added_by_id, default_user).color,
             name=item.name, quantity=item.quantity, checked=item.checked,
             sort_order=item.sort_order,
-        image_url=("/api/v1/images/" + item.image_path) if item.image_path else None,
+        image_url=signed_image_url(item.image_path) if item.image_path else None,
         created_at=item.created_at,
             updated_at=item.updated_at,
         )
@@ -87,7 +89,7 @@ async def create_item(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
 
     # Reject duplicates (case-insensitive, trimmed) within the same list.
     name_key = (req.name or "").strip().lower()
@@ -142,16 +144,16 @@ async def create_item_from_photo(
     """User takes a photo of a single item → AI identifies it → item is added
     uncategorized to the list. Reuses the fridge model since the task is the
     same shape (identify grocery product from a photograph)."""
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
 
     settings = get_settings()
     if not settings.ollama_url:
         raise HTTPException(status_code=503, detail="Photo item recognition requires Ollama")
-    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are allowed")
     content = await file.read()
     if len(content) > MAX_PHOTO_SIZE:
         raise HTTPException(status_code=400, detail="Image too large (max 8MB)")
+    # Verify actual bytes are a real image — Content-Type is attacker-controlled.
+    actual_mime = validate_image(content)
 
     language = "German" if (current_user.locale or "de").lower().startswith("de") else "English"
     try:
@@ -190,7 +192,8 @@ async def create_item_from_photo(
     # Persist the user's photo as the item's image so the list shows the exact
     # snapshot they took. Same storage as the manual photo-attach endpoint.
     image_id = uuid.uuid4().hex
-    session.add(ItemImage(id=image_id, content_type=file.content_type, data=content))
+    # Store with the detected MIME, never the client-claimed one.
+    session.add(ItemImage(id=image_id, content_type=actual_mime, data=content))
 
     item = ListItem(
         list_id=list_id,
@@ -215,13 +218,14 @@ async def create_item_from_photo(
 
 # IMPORTANT: /reorder MUST be before /{item_id} to avoid route conflict
 @router.patch("/reorder", response_model=list[ItemResponse])
+# reorder mutates, so it requires edit permission too
 async def reorder_items(
     list_id: str,
     req: ReorderItemsRequest,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
 
     for i, iid in enumerate(req.item_ids):
         result = await session.execute(
@@ -250,7 +254,7 @@ async def update_item(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
     result = await session.execute(
         select(ListItem).where(ListItem.id == item_id, ListItem.list_id == list_id)
     )
@@ -306,7 +310,7 @@ async def toggle_check(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
     result = await session.execute(
         select(ListItem).where(ListItem.id == item_id, ListItem.list_id == list_id)
     )
@@ -339,7 +343,7 @@ async def delete_item(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
     result = await session.execute(
         select(ListItem).where(ListItem.id == item_id, ListItem.list_id == list_id)
     )
@@ -364,7 +368,7 @@ async def clear_all_items(
     session: AsyncSession = Depends(get_session),
 ):
     """Delete all items from a list (keeps categories)."""
-    await get_list_with_access(list_id, current_user, session)
+    await get_list_with_access(list_id, current_user, session, require_edit=True)
     result = await session.execute(
         select(ListItem).where(ListItem.list_id == list_id)
     )

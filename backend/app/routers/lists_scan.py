@@ -1,9 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
 
 from app.core.deps import get_current_user
 from app.config import get_settings
 from app.core import runtime_config
+from app.core.image_validation import validate_image
+from app.core.ratelimit import limiter
 from app.models.user import User
 from app.services.ml_service import ml_service
 
@@ -15,7 +17,9 @@ MAX_SIZE = 8 * 1024 * 1024
 
 
 @router.post("")
+@limiter.limit("15/hour")
 async def scan_list_from_photo(
+    request: Request,
     file: UploadFile = File(...),
     language: str = Form("English"),
     current_user: User = Depends(get_current_user),
@@ -28,11 +32,11 @@ async def scan_list_from_photo(
             status_code=503,
             detail="Scan is only available when Ollama (advanced AI mode) is configured",
         )
-    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are allowed")
     content = await file.read()
     if len(content) > MAX_SIZE:
         raise HTTPException(status_code=400, detail="Image too large (max 8MB)")
+    # Validate actual bytes — client-supplied Content-Type is untrusted.
+    validate_image(content)
     try:
         return ml_service.scan_list_from_image(
             content,
@@ -42,11 +46,13 @@ async def scan_list_from_photo(
         )
     except Exception as e:
         logger.exception("Scan failed")
-        raise HTTPException(status_code=500, detail=f"Scan failed: {e}")
+        raise HTTPException(status_code=500, detail="Scan failed. Please try again later.")
 
 
 @router.post("-fridge")
+@limiter.limit("15/hour")
 async def scan_fridge_from_photo(
+    request: Request,
     file: UploadFile = File(...),
     language: str = Form("German"),
     current_user: User = Depends(get_current_user),
@@ -59,11 +65,10 @@ async def scan_fridge_from_photo(
             status_code=503,
             detail="Fridge scan is only available when Ollama is configured",
         )
-    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are allowed")
     content = await file.read()
     if len(content) > MAX_SIZE:
         raise HTTPException(status_code=400, detail="Image too large (max 8MB)")
+    validate_image(content)
     try:
         return ml_service.scan_fridge_from_image(
             content,
@@ -73,4 +78,4 @@ async def scan_fridge_from_photo(
         )
     except Exception as e:
         logger.exception("Fridge scan failed")
-        raise HTTPException(status_code=500, detail=f"Fridge scan failed: {e}")
+        raise HTTPException(status_code=500, detail="Fridge scan failed. Please try again later.")
