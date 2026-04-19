@@ -15,8 +15,16 @@ frontend/dist/
 data/
 *.db
 
-# Env
+# Env (pin ALL secret-bearing variants so timestamped backups never sneak in)
 .env
+.env.*
+*.env
+.env.bak*
+.env.backup*
+.env.*.bak
+!.env.example
+*.pem
+*.key
 
 # IDE
 .vscode/
