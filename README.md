@@ -2,6 +2,8 @@
 
 A mobile-first Progressive Web App (PWA) for collaborative grocery shopping. Features AI-powered auto-categorization, paper-list & fridge photo scanning, single-item photo identification, voice commands, recipe suggestions from list items or free-text queries, loyalty-card storage, and an admin interface with temporary runtime model overrides.
 
+You can see it live in action using https://einkauf.kernkraft.io 
+
 ## Features
 
 ### Shopping Lists
