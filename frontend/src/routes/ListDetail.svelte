@@ -178,6 +178,45 @@
   }
 
   // === Actions ===
+  let identifyingPhoto = $state(false);
+
+  function addItemFromPhoto() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      identifyingPhoto = true;
+      try {
+        const compressed = await compressImage(file, 1024, 0.75);
+        const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        const fd = new FormData();
+        fd.append('file', compressed, 'item.jpg');
+        const res = await fetch('/api/v1/lists/' + params.id + '/items/from-photo', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token },
+          body: fd,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Recognition failed' }));
+          throw new Error(err.detail || 'Recognition failed');
+        }
+        const item = await res.json();
+        // WebSocket will broadcast item_added too, handleWsMessage dedups by id.
+        if (!items.some((i) => i.id === item.id)) items = [...items, item];
+        rebuildGroups();
+        showToast($t('item.photo.added').replace('{name}', item.name), 'success');
+      } catch (err) {
+        showToast(err.message || $t('error.generic'), 'error');
+      } finally {
+        identifyingPhoto = false;
+      }
+    };
+    input.click();
+  }
+
   async function addItem(e) {
     e.preventDefault(); if (!newItemName.trim()) return; addingItem = true;
     try {
@@ -389,6 +428,20 @@
       <input type="text" bind:value={newItemName} placeholder={$t('item.add.placeholder')} class="input-field flex-1" />
       <input type="text" bind:value={newItemQty} placeholder={$t('item.quantity.placeholder')} class="input-field w-20" />
       <button type="submit" disabled={addingItem} class="btn-primary whitespace-nowrap">+</button>
+      <button type="button" onclick={addItemFromPhoto} disabled={identifyingPhoto}
+        class="btn-icon border border-gray-200 rounded-lg px-3 text-cyan-600 disabled:opacity-50"
+        title={$t('item.photo.add')} aria-label={$t('item.photo.add')}>
+        {#if identifyingPhoto}
+          <svg class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
+          </svg>
+        {:else}
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+        {/if}
+      </button>
     </form>
 
     <!-- Uncategorized items -->

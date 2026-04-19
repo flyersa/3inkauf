@@ -15,6 +15,8 @@ _overrides: dict[str, Optional[str]] = {
     "ollama_ocr_model": None,
     "ollama_audio_model": None,
     "ollama_recipe_model": None,
+    "ollama_fridge_model": None,
+    "ollama_item_model": None,
 }
 
 
@@ -38,6 +40,24 @@ def get_recipe_model() -> str:
     return _overrides["ollama_recipe_model"] or s.ollama_recipe_model or s.ollama_model
 
 
+def get_fridge_model() -> str:
+    s = get_settings()
+    return _overrides["ollama_fridge_model"] or s.ollama_fridge_model or s.ollama_ocr_model or s.ollama_model
+
+
+def get_item_model() -> str:
+    """Item-from-photo: single grocery item in a user's own photo. Falls
+    back to the fridge model because the task shape is identical."""
+    s = get_settings()
+    return (
+        _overrides["ollama_item_model"]
+        or s.ollama_item_model
+        or _overrides["ollama_fridge_model"]
+        or s.ollama_fridge_model
+        or s.ollama_model
+    )
+
+
 def get_state() -> dict:
     s = get_settings()
     return {
@@ -46,6 +66,8 @@ def get_state() -> dict:
             "ollama_ocr_model": s.ollama_ocr_model,
             "ollama_audio_model": s.ollama_audio_model,
             "ollama_recipe_model": s.ollama_recipe_model,
+            "ollama_fridge_model": s.ollama_fridge_model,
+            "ollama_item_model": s.ollama_item_model,
         },
         "overrides": dict(_overrides),
         "effective": {
@@ -53,6 +75,8 @@ def get_state() -> dict:
             "ollama_ocr_model": get_ocr_model(),
             "ollama_audio_model": get_audio_model(),
             "ollama_recipe_model": get_recipe_model(),
+            "ollama_fridge_model": get_fridge_model(),
+            "ollama_item_model": get_item_model(),
         },
     }
 

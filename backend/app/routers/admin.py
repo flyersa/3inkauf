@@ -417,6 +417,8 @@ class ModelOverrideRequest(BaseModel):
     ollama_ocr_model: Optional[str] = None
     ollama_audio_model: Optional[str] = None
     ollama_recipe_model: Optional[str] = None
+    ollama_fridge_model: Optional[str] = None
+    ollama_item_model: Optional[str] = None
 
 
 @router.get("/runtime-config")
@@ -426,7 +428,7 @@ async def get_runtime_config():
 
 @router.post("/runtime-config")
 async def set_runtime_config(req: ModelOverrideRequest):
-    for key in ("ollama_model", "ollama_ocr_model", "ollama_audio_model", "ollama_recipe_model"):
+    for key in ("ollama_model", "ollama_ocr_model", "ollama_audio_model", "ollama_recipe_model", "ollama_fridge_model", "ollama_item_model"):
         val = getattr(req, key)
         if val is not None:
             runtime_config.set_override(key, val)

@@ -90,8 +90,12 @@
     });
   }
 
-  function startScan() {
-    // Title is now collected in the preview modal after the scan. If the user
+  // Scan mode: 'ocr' (paper list) or 'fridge' (photo of fridge interior).
+  let scanMode = $state('ocr');
+
+  function startScan(mode = 'ocr') {
+    scanMode = mode;
+    // Title is collected in the preview modal after the scan. If the user
     // already typed one into the top field, prefill it — otherwise leave empty.
     const prefilledName = newListName.trim();
     const input = document.createElement('input');
@@ -108,7 +112,8 @@
         const fd = new FormData();
         fd.append('file', compressed, 'list.jpg');
         fd.append('language', $locale === 'de' ? 'German' : 'English');
-        const res = await fetch('/api/v1/lists/scan', {
+        const endpoint = scanMode === 'fridge' ? '/api/v1/lists/scan-fridge' : '/api/v1/lists/scan';
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token },
           body: fd,
@@ -120,9 +125,15 @@
         const data = await res.json();
         scanResult = {
           categories: data.categories || [],
-          items: (data.items || []).map(it => ({ ...it, include: true })),
+          items: (data.items || []).map(it => ({
+            ...it,
+            // Fridge scan: low-confidence items default unchecked so the user
+            // has to opt into noise; high/medium default checked.
+            include: scanMode === 'fridge' ? (it.confidence !== 'low') : true,
+          })),
         };
-        scanListName = prefilledName;
+        // Default fridge-scan title if user hasn't typed one.
+        scanListName = prefilledName || (scanMode === 'fridge' ? ($t('fridge.default.name') || 'Kühlschrank') : '');
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
@@ -224,13 +235,13 @@
     {#if ollamaEnabled}
       <button
         type="button"
-        onclick={startScan}
+        onclick={() => startScan('ocr')}
         disabled={scanning}
         class="btn-icon border border-gray-200 rounded-lg px-3"
         title={$t('scan.tooltip')}
         aria-label={$t('scan.tooltip')}
       >
-        {#if scanning}
+        {#if scanning && scanMode === 'ocr'}
           <svg class="h-5 w-5 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
           </svg>
@@ -238,6 +249,27 @@
           <svg class="h-5 w-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
             <circle cx="12" cy="13" r="4" />
+          </svg>
+        {/if}
+      </button>
+      <button
+        type="button"
+        onclick={() => startScan('fridge')}
+        disabled={scanning}
+        class="btn-icon border border-gray-200 rounded-lg px-3"
+        title={$t('fridge.tooltip')}
+        aria-label={$t('fridge.tooltip')}
+      >
+        {#if scanning && scanMode === 'fridge'}
+          <svg class="h-5 w-5 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
+          </svg>
+        {:else}
+          <svg class="h-5 w-5 text-cyan-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" />
+            <line x1="5" y1="10" x2="19" y2="10" />
+            <line x1="8" y1="6" x2="8" y2="7" />
+            <line x1="8" y1="14" x2="8" y2="15" />
           </svg>
         {/if}
       </button>
@@ -286,7 +318,7 @@
       <div class="text-blue-500 flex justify-center">
         <Spinner size="lg" />
       </div>
-      <div class="text-sm text-gray-600">{$t('scan.processing')}</div>
+      <div class="text-sm text-gray-600">{scanMode === 'fridge' ? $t('fridge.processing') : $t('scan.processing')}</div>
     </div>
   </div>
 {/if}
@@ -295,7 +327,7 @@
   <div class="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" role="dialog">
     <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
       <div class="px-5 pt-5 pb-3 flex items-center justify-between">
-        <h2 class="text-lg font-bold">{$t('scan.preview.title')}</h2>
+        <h2 class="text-lg font-bold">{scanMode === 'fridge' ? $t('fridge.preview.title') : $t('scan.preview.title')}</h2>
         <button onclick={cancelScan} class="btn-icon" aria-label={$t('btn.close')}>&times;</button>
       </div>
       <div class="px-5 pb-2">

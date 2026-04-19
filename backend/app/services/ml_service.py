@@ -466,6 +466,181 @@ class MLService:
             cleaned_items.append({"name": name, "quantity": qty, "category": cat})
         return {"categories": categories, "items": cleaned_items}
 
+    def identify_item_from_image(
+        self,
+        image_bytes: bytes,
+        language: str = "German",
+        ollama_url: str = "",
+        ollama_model: str = "qwen3.5:397b-cloud",
+    ) -> dict:
+        """Look at a photo of a single grocery item and return its name
+        (supermarket-style) plus any obvious quantity. Returns
+        ``{"name": str|None, "quantity": str|None}`` — ``name`` is None when
+        no confident identification is possible so the caller can surface a
+        friendly error."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        is_german = language.lower().startswith("german") or language.lower().startswith("de")
+        language_name = "German" if is_german else "English"
+
+        prompt = (
+            "You are looking at a photograph a user took of ONE grocery item they want to "
+            "add to their shopping list. Identify the single most prominent product.\n\n"
+            f"OUTPUT LANGUAGE: {language_name}. Use supermarket-style naming.\n\n"
+            "Rules:\n"
+            "- `name` is ONE short product name (max 3 words), e.g. \"Milch\", \"Joghurt Vanille\", "
+            "\"Bananen\". No brand names unless nothing else identifies the product.\n"
+            "- `quantity` is the package size or count if printed on the packaging (e.g. \"1L\", "
+            "\"500g\", \"6 Stück\"); null if nothing obvious is visible.\n"
+            "- If you can't identify a single grocery item with confidence, set name to null.\n"
+            "- Never invent. Return null name rather than guessing.\n\n"
+            "Respond with JSON ONLY in this exact shape:\n"
+            '{"name": "<name-or-null>", "quantity": "<qty-or-null>"}'
+        )
+        resp = requests.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+                "stream": False,
+                "think": False,
+                "format": "json",
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": {
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                    "num_ctx": 4096,
+                    "num_predict": 200,
+                },
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("message", {}).get("content", "")
+        logger.info(f"Item-photo raw output ({len(raw)} chars): {raw[:200]!r}")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not m:
+                return {"name": None, "quantity": None}
+            data = json.loads(m.group())
+
+        name = data.get("name")
+        if name is not None:
+            n = str(name).strip()
+            name = n if n and n.lower() != "null" else None
+        qty = data.get("quantity")
+        if qty is not None:
+            q = str(qty).strip()
+            qty = q if q and q.lower() != "null" else None
+        return {"name": name, "quantity": qty}
+
+    def scan_fridge_from_image(
+        self,
+        image_bytes: bytes,
+        language: str = "German",
+        ollama_url: str = "",
+        ollama_model: str = "qwen3.5:397b-cloud",
+    ) -> dict:
+        """Identify food items visible in a photograph of a refrigerator's
+        contents. Returns the same shape as paper-list scan so the frontend
+        preview modal can be reused, plus a `confidence` field per item."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+
+        is_german = language.lower().startswith("german") or language.lower().startswith("de")
+        if is_german:
+            cat_examples = (
+                "Obst & Gemüse, Milchprodukte, Fleisch & Wurst, "
+                "Getränke, Tiefkühl, Süßwaren, Sonstiges"
+            )
+        else:
+            cat_examples = (
+                "Produce, Dairy, Meat, Beverages, Frozen, Sweets, Other"
+            )
+
+        prompt = (
+            "You are looking at a photograph of the inside of a refrigerator. "
+            "List every food item you can identify, even partial ones.\n\n"
+            f"OUTPUT LANGUAGE: {language}. Use {language} names for items and categories.\n\n"
+            "For each item include:\n"
+            "- `name`: supermarket-style name (e.g. \"Joghurt\", \"Salami\").\n"
+            "- `quantity`: optional (e.g. \"1 pack\", \"6 eggs\"), use null if unclear.\n"
+            "- `category`: one of the supermarket categories listed below.\n"
+            "- `confidence`: one of \"high\", \"medium\", \"low\".\n\n"
+            f"Suggested categories (pick the best fit, reuse across similar items): {cat_examples}.\n\n"
+            "Rules:\n"
+            "- Do NOT invent items. If unsure, use confidence=low, never omit the flag.\n"
+            "- Focus on edible groceries. Skip empty containers and unidentifiable wrapped packages.\n"
+            "- If the photo is not a fridge or the fridge is empty, return empty arrays.\n\n"
+            "Respond with JSON ONLY in this exact shape:\n"
+            '{"categories": ["<cat>", ...], '
+            '"items": [{"name": "<item>", "quantity": "<qty-or-null>", '
+            '"category": "<cat>", "confidence": "high|medium|low"}]}'
+        )
+        resp = requests.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+                "stream": False,
+                "think": False,
+                "format": "json",
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": {
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                    "num_ctx": 8192,
+                    "num_predict": 2000,
+                },
+            },
+            timeout=180,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("message", {}).get("content", "")
+        logger.info(f"Fridge scan raw output ({len(raw)} chars): {raw[:400]!r}")
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not m:
+                raise RuntimeError(f"Model returned non-JSON: {raw[:200]}")
+            data = json.loads(m.group())
+
+        categories = [
+            c.strip() for c in (data.get("categories") or [])
+            if isinstance(c, str) and c.strip()
+        ]
+        seen_cats = {c.lower() for c in categories}
+        cleaned_items = []
+        for it in data.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get("name") or "").strip()
+            if not name:
+                continue
+            qty = it.get("quantity")
+            if qty is not None:
+                qs = str(qty).strip()
+                qty = qs if qs and qs.lower() != "null" else None
+            cat = str(it.get("category") or "").strip() or None
+            if cat and cat.lower() not in seen_cats:
+                categories.append(cat)
+                seen_cats.add(cat.lower())
+            conf = str(it.get("confidence") or "medium").strip().lower()
+            if conf not in ("high", "medium", "low"):
+                conf = "medium"
+            cleaned_items.append({"name": name, "quantity": qty, "category": cat, "confidence": conf})
+        return {"categories": categories, "items": cleaned_items}
+
     # ------------------------------------------------------------------
     # Recipes
     # ------------------------------------------------------------------

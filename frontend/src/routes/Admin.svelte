@@ -168,12 +168,16 @@
   let ovrOcr = $state('');
   let ovrAudio = $state('');
   let ovrRecipe = $state('');
+  let ovrFridge = $state('');
+  let ovrItem = $state('');
   async function loadRuntime() {
     runtimeCfg = await api('GET', '/runtime-config');
     ovrModel = runtimeCfg.overrides.ollama_model || '';
     ovrOcr = runtimeCfg.overrides.ollama_ocr_model || '';
     ovrAudio = runtimeCfg.overrides.ollama_audio_model || '';
     ovrRecipe = runtimeCfg.overrides.ollama_recipe_model || '';
+    ovrFridge = runtimeCfg.overrides.ollama_fridge_model || '';
+    ovrItem = runtimeCfg.overrides.ollama_item_model || '';
   }
   async function applyRuntime() {
     busy = true;
@@ -183,6 +187,8 @@
         ollama_ocr_model: ovrOcr,
         ollama_audio_model: ovrAudio,
         ollama_recipe_model: ovrRecipe,
+        ollama_fridge_model: ovrFridge,
+        ollama_item_model: ovrItem,
       });
     } catch (e) { err(e); }
     finally { busy = false; }
@@ -192,7 +198,7 @@
     busy = true;
     try {
       runtimeCfg = await api('DELETE', '/runtime-config');
-      ovrModel = ''; ovrOcr = ''; ovrAudio = ''; ovrRecipe = '';
+      ovrModel = ''; ovrOcr = ''; ovrAudio = ''; ovrRecipe = ''; ovrFridge = ''; ovrItem = '';
     } catch (e) { err(e); }
     finally { busy = false; }
   }
@@ -414,6 +420,8 @@
                 <li>OCR / scan: <span class="font-bold">{runtimeCfg.effective.ollama_ocr_model}</span> <span class="text-xs text-gray-500">(env: {runtimeCfg.settings.ollama_ocr_model || '—'})</span></li>
                 <li>Voice intent: <span class="font-bold">{runtimeCfg.effective.ollama_audio_model}</span> <span class="text-xs text-gray-500">(env: {runtimeCfg.settings.ollama_audio_model || '—'})</span></li>
                 <li>Recipes: <span class="font-bold">{runtimeCfg.effective.ollama_recipe_model}</span> <span class="text-xs text-gray-500">(env: {runtimeCfg.settings.ollama_recipe_model || '—'})</span></li>
+                <li>Fridge scan: <span class="font-bold">{runtimeCfg.effective.ollama_fridge_model}</span> <span class="text-xs text-gray-500">(env: {runtimeCfg.settings.ollama_fridge_model || '—'})</span></li>
+                <li>Item from photo: <span class="font-bold">{runtimeCfg.effective.ollama_item_model}</span> <span class="text-xs text-gray-500">(env: {runtimeCfg.settings.ollama_item_model || '—'})</span></li>
               </ul>
             </div>
 
@@ -434,6 +442,14 @@
               <label class="block">
                 <span class="text-sm font-medium">OLLAMA_RECIPE_MODEL (recipes)</span>
                 <input bind:value={ovrRecipe} placeholder="leave empty to use env" class="mt-1 w-full font-mono text-sm rounded border-gray-300 px-3 py-2 border" />
+              </label>
+              <label class="block">
+                <span class="text-sm font-medium">OLLAMA_FRIDGE_MODEL (fridge scan)</span>
+                <input bind:value={ovrFridge} placeholder="leave empty to use env" class="mt-1 w-full font-mono text-sm rounded border-gray-300 px-3 py-2 border" />
+              </label>
+              <label class="block">
+                <span class="text-sm font-medium">OLLAMA_ITEM_MODEL (item from photo)</span>
+                <input bind:value={ovrItem} placeholder="leave empty to fall back to fridge model" class="mt-1 w-full font-mono text-sm rounded border-gray-300 px-3 py-2 border" />
               </label>
               <div class="flex gap-2">
                 <button onclick={applyRuntime} disabled={busy} class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50">Apply</button>

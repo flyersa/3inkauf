@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     ollama_ocr_model: str = ""
     ollama_audio_model: str = ""
     ollama_recipe_model: str = ""
+    ollama_fridge_model: str = ""
+    ollama_item_model: str = ""
 
     # Admin (HTTP Basic auth on /admin/*). If either is empty, /admin is disabled.
     admin_username: str = ""
