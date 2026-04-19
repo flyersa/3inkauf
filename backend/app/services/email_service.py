@@ -44,6 +44,8 @@ async def send_password_reset_email(to_email: str, reset_token: str, locale: str
     msg.attach(MIMEText(body_html, "html"))
 
     try:
+        # AWS SES occasionally hangs on QUIT after accepting the message; cap
+        # the total SMTP operation so auth/forgot-password always returns.
         await aiosmtplib.send(
             msg,
             hostname=settings.smtp_host,
@@ -51,8 +53,11 @@ async def send_password_reset_email(to_email: str, reset_token: str, locale: str
             username=settings.smtp_user,
             password=settings.smtp_password,
             start_tls=True,
+            timeout=15,
         )
         logger.info(f"Password reset email sent to {to_email}")
+    except TimeoutError:
+        logger.warning(f"SMTP timed out on password reset to {to_email} (likely delivered)")
     except Exception as e:
         logger.error(f"Failed to send email to {to_email}: {e}")
         # In development, log the reset URL so we can still test

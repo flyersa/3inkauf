@@ -300,15 +300,28 @@ class MLService:
             f"apply to the chosen action):\n{schema}"
         )
 
+        # Voice intent needs deterministic structured output; the OLLAMA_SAMPLING
+        # defaults (temperature=1.0) are tuned for scan creativity and
+        # occasionally make small models emit just <eos> on short commands.
+        voice_sampling = {
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "top_k": 40,
+            "num_ctx": 8192,
+            "num_predict": 300,
+        }
         resp = requests.post(
             f"{ollama_url}/api/chat",
             json={
                 "model": ollama_model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
+                # Without think:false, reasoning-mode models (e.g. gemma4:e2b)
+                # exhaust num_predict on hidden thinking and return empty content.
+                "think": False,
                 "format": "json",
                 "keep_alive": OLLAMA_KEEP_ALIVE,
-                "options": {**OLLAMA_SAMPLING, "num_predict": 300},
+                "options": voice_sampling,
             },
             timeout=30,
         )
@@ -412,7 +425,9 @@ class MLService:
                 "think": False,
                 "format": "json",
                 "keep_alive": OLLAMA_KEEP_ALIVE,
-                "options": OLLAMA_SAMPLING,
+                # num_predict bump: cloud-served models (e.g. gemma4:31b-cloud)
+                # default to ~256 output tokens which truncates long lists.
+                "options": {**OLLAMA_SAMPLING, "num_predict": 2048},
             },
             timeout=180,
         )
@@ -450,6 +465,333 @@ class MLService:
                 seen_cats.add(cat.lower())
             cleaned_items.append({"name": name, "quantity": qty, "category": cat})
         return {"categories": categories, "items": cleaned_items}
+
+    # ------------------------------------------------------------------
+    # Recipes
+    # ------------------------------------------------------------------
+    def _recipe_chat(
+        self,
+        ollama_url: str,
+        ollama_model: str,
+        prompt: str,
+        timeout: int = 60,
+        num_predict: int = 1500,
+    ) -> dict:
+        """Call Ollama chat API for recipe JSON. Uses deterministic sampling
+        to keep structured output stable for small local models."""
+        resp = requests.post(
+            f"{ollama_url}/api/chat",
+            json={
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "think": False,
+                "format": "json",
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": {
+                    "temperature": 0.4,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                    "num_ctx": 8192,
+                    "num_predict": num_predict,
+                },
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("message", {}).get("content", "")
+        logger.info(f"Recipe raw ({len(raw)} chars): {raw[:300]!r}")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not m:
+                raise RuntimeError(f"Model returned non-JSON: {raw[:200]}")
+            return json.loads(m.group())
+
+    @staticmethod
+    def _is_german(locale: str) -> bool:
+        return (locale or "").lower().startswith("de")
+
+    def generate_recipes_from_items(
+        self,
+        items_on_list: list[str],
+        locale: str = "de",
+        ollama_url: str = "",
+        ollama_model: str = "gemma3:4b",
+    ) -> dict:
+        """Suggest 3-5 recipes that can be made primarily from items already on
+        the list, listing missing items the user would still need to buy."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+        if not items_on_list:
+            return {"recipes": []}
+
+        language = "German" if self._is_german(locale) else "English"
+        items_str = ", ".join(items_on_list[:80])
+
+        prompt = (
+            "You are a home cook. Based on the ingredients ALREADY on the user's shopping list, "
+            "suggest 3 concrete, named dishes they could cook. For each, return the complete "
+            "recipe (ingredients + numbered preparation steps) in ONE response.\n\n"
+            f"OUTPUT LANGUAGE: {language}. Use {language} names for recipes, ingredients, and steps.\n\n"
+            "Rules:\n"
+            "- Each recipe MUST use at least 2 items from the shopping list as main ingredients.\n"
+            "- Include additional typical ingredients the recipe needs (oil, onion, garlic, "
+            "spices, etc.) — those are what the user will add.\n"
+            "- 5 to 10 ingredients per recipe.\n"
+            "- 4 to 8 numbered preparation steps per recipe. Keep each step ONE short sentence.\n"
+            "- Propose variety (don't return 3 pasta dishes).\n"
+            "- Set `already_have` true if the ingredient is clearly on the list (case-insensitive, "
+            "simple plural/singular). The server will re-verify.\n"
+            "- Keep `description` to ONE short sentence.\n\n"
+            f"CURRENT SHOPPING LIST:\n{items_str}\n\n"
+            "Respond with JSON ONLY in this exact shape:\n"
+            '{"recipes": [{"title": "...", "description": "...", "servings": <int>, '
+            '"prep_time_minutes": <int-or-null>, "cook_time_minutes": <int-or-null>, '
+            '"ingredients": [{"name": "...", "quantity": "<qty-or-null>", "already_have": true}], '
+            '"steps": ["Step 1...", "Step 2...", "..."], "tips": "<short tip or empty>"}]}'
+        )
+
+        # Larger num_predict because each recipe now includes full steps.
+        data = self._recipe_chat(ollama_url, ollama_model, prompt, timeout=120, num_predict=4000)
+        already_on_list = {s.strip().lower() for s in items_on_list}
+
+        def norm(n: str) -> str:
+            return (n or "").strip().lower()
+
+        recipes = []
+        for r in data.get("recipes") or []:
+            if not isinstance(r, dict):
+                continue
+            title = str(r.get("title") or "").strip()
+            if not title:
+                continue
+            desc = str(r.get("description") or "").strip()
+            try:
+                servings = int(r.get("servings")) if r.get("servings") is not None else None
+            except (TypeError, ValueError):
+                servings = None
+            try:
+                prep = int(r.get("prep_time_minutes")) if r.get("prep_time_minutes") is not None else None
+            except (TypeError, ValueError):
+                prep = None
+            try:
+                cook = int(r.get("cook_time_minutes")) if r.get("cook_time_minutes") is not None else None
+            except (TypeError, ValueError):
+                cook = None
+            tips = str(r.get("tips") or "").strip() or None
+
+            ing_out = []
+            for ing in r.get("ingredients") or []:
+                if not isinstance(ing, dict):
+                    continue
+                name = str(ing.get("name") or "").strip()
+                if not name:
+                    continue
+                qty = ing.get("quantity")
+                if qty is not None:
+                    qs = str(qty).strip()
+                    qty = qs if qs and qs.lower() != "null" else None
+                # Re-verify already_have server-side so we don't trust the model blindly
+                have = norm(name) in already_on_list or any(
+                    norm(name) in it or it in norm(name) for it in already_on_list
+                )
+                ing_out.append({"name": name, "quantity": qty, "already_have": bool(have)})
+
+            steps_out = []
+            for s in r.get("steps") or []:
+                if isinstance(s, str):
+                    ss = s.strip()
+                    if ss:
+                        steps_out.append(ss)
+
+            recipes.append({
+                "title": title,
+                "description": desc,
+                "servings": servings,
+                "prep_time_minutes": prep,
+                "cook_time_minutes": cook,
+                "ingredients": ing_out,
+                "steps": steps_out,
+                "tips": tips,
+            })
+        return {"recipes": recipes}
+
+    def generate_recipe_from_query(
+        self,
+        query: str,
+        locale: str = "de",
+        ollama_url: str = "",
+        ollama_model: str = "gemma3:4b",
+    ) -> dict:
+        """Expand a free-text recipe request like 'Spaghetti bolognese für 4
+        Personen' into a structured ingredient list."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+        q = (query or "").strip()
+        if not q:
+            raise ValueError("Recipe query is empty")
+
+        language = "German" if self._is_german(locale) else "English"
+
+        prompt = (
+            "You are a home cook. Given a free-text recipe request, return the complete recipe: "
+            "ingredients the user needs to buy AND numbered preparation steps — all in ONE response.\n\n"
+            f"OUTPUT LANGUAGE: {language}. Use {language} names for the recipe, ingredients, and steps.\n\n"
+            "Rules:\n"
+            "- If the user mentions a servings/persons count, reflect it in `servings` and scale "
+            "quantities accordingly. Default to 2 servings if unspecified.\n"
+            "- Ingredients: supermarket-level only (don't list salt/pepper/water unless genuinely needed).\n"
+            "- Steps: 4 to 8 numbered preparation steps, each ONE short clear sentence.\n\n"
+            f"USER REQUEST: \"{q}\"\n\n"
+            "Respond with JSON ONLY in this shape:\n"
+            '{"title": "...", "servings": <int>, "prep_time_minutes": <int-or-null>, '
+            '"cook_time_minutes": <int-or-null>, '
+            '"ingredients": [{"name": "...", "quantity": "<qty-or-null>"}], '
+            '"steps": ["Step 1...", "Step 2...", "..."], '
+            '"tips": "<short tip or empty>"}'
+        )
+
+        data = self._recipe_chat(ollama_url, ollama_model, prompt, timeout=90, num_predict=2500)
+        title = str(data.get("title") or "").strip() or q
+        servings = data.get("servings")
+        try:
+            servings = int(servings) if servings is not None else None
+        except (TypeError, ValueError):
+            servings = None
+        try:
+            prep = int(data.get("prep_time_minutes")) if data.get("prep_time_minutes") is not None else None
+        except (TypeError, ValueError):
+            prep = None
+        try:
+            cook = int(data.get("cook_time_minutes")) if data.get("cook_time_minutes") is not None else None
+        except (TypeError, ValueError):
+            cook = None
+        tips = str(data.get("tips") or "").strip() or None
+
+        ing_out = []
+        for ing in data.get("ingredients") or []:
+            if not isinstance(ing, dict):
+                continue
+            name = str(ing.get("name") or "").strip()
+            if not name:
+                continue
+            qty = ing.get("quantity")
+            if qty is not None:
+                qs = str(qty).strip()
+                qty = qs if qs and qs.lower() != "null" else None
+            ing_out.append({"name": name, "quantity": qty})
+
+        steps_out = []
+        for s in data.get("steps") or []:
+            if isinstance(s, str):
+                ss = s.strip()
+                if ss:
+                    steps_out.append(ss)
+
+        return {
+            "title": title,
+            "servings": servings,
+            "prep_time_minutes": prep,
+            "cook_time_minutes": cook,
+            "ingredients": ing_out,
+            "steps": steps_out,
+            "tips": tips,
+        }
+
+    def generate_full_recipe(
+        self,
+        title: str,
+        locale: str = "de",
+        servings: Optional[int] = None,
+        existing_ingredients: Optional[list[dict]] = None,
+        ollama_url: str = "",
+        ollama_model: str = "gemma3:4b",
+    ) -> dict:
+        """Expand a recipe title into a full recipe: ingredients (with qty),
+        numbered preparation steps, and timing info."""
+        if not ollama_url:
+            raise RuntimeError("Ollama URL not configured")
+        t = (title or "").strip()
+        if not t:
+            raise ValueError("Recipe title is empty")
+
+        language = "German" if self._is_german(locale) else "English"
+        context_block = ""
+        if existing_ingredients:
+            names = [i.get("name") for i in existing_ingredients if isinstance(i, dict) and i.get("name")]
+            if names:
+                context_block = (
+                    "\nThe user already plans these ingredients for the dish: "
+                    + ", ".join(names[:30]) + ". Reconcile with them when possible.\n"
+                )
+        servings_hint = f"Target servings: {servings}." if servings else "If unspecified, plan for 2 servings."
+
+        prompt = (
+            "You are an experienced home cook. Expand the recipe title into a complete recipe.\n\n"
+            f"OUTPUT LANGUAGE: {language}. Use {language} names for ingredients and steps.\n\n"
+            f"RECIPE TITLE: {t}\n{context_block}\n"
+            f"{servings_hint}\n\n"
+            "Return JSON ONLY in this exact shape:\n"
+            '{"title": "...", "servings": <int>, "prep_time_minutes": <int-or-null>, '
+            '"cook_time_minutes": <int-or-null>, '
+            '"ingredients": [{"name": "...", "quantity": "<qty-or-null>"}], '
+            '"steps": ["Step 1...", "Step 2...", "..."], '
+            '"tips": "<short tip or empty>"}\n\n'
+            "Rules:\n"
+            "- Steps must be a numbered sequence of clear, short instructions (aim 4-10 steps).\n"
+            "- Keep ingredient quantities scaled to the target servings.\n"
+            "- Don't include salt/pepper/water as steps unless genuinely important.\n"
+            "- No markdown, no explanations outside the JSON."
+        )
+
+        data = self._recipe_chat(ollama_url, ollama_model, prompt, timeout=90)
+
+        out_title = str(data.get("title") or "").strip() or t
+        try:
+            out_servings = int(data.get("servings")) if data.get("servings") is not None else servings
+        except (TypeError, ValueError):
+            out_servings = servings
+        try:
+            prep = int(data.get("prep_time_minutes")) if data.get("prep_time_minutes") is not None else None
+        except (TypeError, ValueError):
+            prep = None
+        try:
+            cook = int(data.get("cook_time_minutes")) if data.get("cook_time_minutes") is not None else None
+        except (TypeError, ValueError):
+            cook = None
+        tips = str(data.get("tips") or "").strip() or None
+
+        ing_out = []
+        for ing in data.get("ingredients") or []:
+            if not isinstance(ing, dict):
+                continue
+            name = str(ing.get("name") or "").strip()
+            if not name:
+                continue
+            qty = ing.get("quantity")
+            if qty is not None:
+                qs = str(qty).strip()
+                qty = qs if qs and qs.lower() != "null" else None
+            ing_out.append({"name": name, "quantity": qty})
+
+        steps_out = []
+        for s in data.get("steps") or []:
+            if isinstance(s, str):
+                ss = s.strip()
+                if ss:
+                    steps_out.append(ss)
+
+        return {
+            "title": out_title,
+            "servings": out_servings,
+            "prep_time_minutes": prep,
+            "cook_time_minutes": cook,
+            "ingredients": ing_out,
+            "steps": steps_out,
+            "tips": tips,
+        }
 
 
 ml_service = MLService()

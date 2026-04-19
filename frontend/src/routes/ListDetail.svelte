@@ -9,6 +9,7 @@
   import Navbar from '../components/Navbar.svelte';
   import ShareDialog from '../components/ShareDialog.svelte';
   import AutoSortDialog from '../components/AutoSortDialog.svelte';
+  import RecipeDialog from '../components/RecipeDialog.svelte';
 
   let { params } = $props();
 
@@ -23,6 +24,7 @@
   let showShare = $state(false);
   let showAutoSort = $state(false);
   let showAddCategory = $state(false);
+  let showRecipe = $state(false);
 
   // Keep the voice-control context in sync with this route's state.
   $effect(() => {
@@ -54,7 +56,7 @@
   let itemGroups = $state({});
   let uncatItems = $state([]);
 
-  const flipDurationMs = 200;
+  const flipDurationMs = 120;
 
   function rebuildGroups() {
     sortedCats = [...categories].sort((a, b) => a.sort_order - b.sort_order);
@@ -302,7 +304,26 @@
 
 <svelte:head>
   <style>
-    .drag-handle { touch-action: none; cursor: grab; padding: 8px 4px; user-select: none; }
+    .drag-handle {
+      touch-action: none;
+      cursor: grab;
+      padding: 10px 14px 10px 8px;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .drag-dots {
+      display: grid;
+      grid-template-columns: 4px 4px;
+      grid-auto-rows: 4px;
+      gap: 3px;
+    }
+    .drag-dots > span {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+    }
   </style>
 </svelte:head>
 
@@ -321,13 +342,11 @@
         <h1 class="text-xl font-bold">{list.name}</h1>
       </div>
       <div class="flex items-center gap-1">
-        {#if items.length > 0}
-          <button onclick={clearAllItems} class="btn-icon text-red-400" title={$t('list.clear.items')}>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-          </button>
-        {/if}
         <button onclick={openAddCategory} class="btn-icon text-green-500" title={$t('category.new')}>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" /><path stroke="white" stroke-width="1.5" stroke-linecap="round" d="M10 9v4M8 11h4" /></svg>
+        </button>
+        <button onclick={() => showRecipe = true} class="btn-icon text-orange-500" title={$t('recipe.tooltip')}>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a4 4 0 00-3.995 3.8A3 3 0 005 11.83V17a1 1 0 001 1h8a1 1 0 001-1v-5.17A3 3 0 0013.995 5.8 4 4 0 0010 2zm-2 14v-3h4v3H8z" clip-rule="evenodd" /></svg>
         </button>
         <button onclick={saveHints} disabled={savingHints} class="btn-icon text-amber-500" title={$t('sort.save.hints')}>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
@@ -338,6 +357,11 @@
         {#if list.is_owner}
           <button onclick={() => showShare = true} class="btn-icon text-blue-500" title={$t('list.share')}>
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg>
+          </button>
+        {/if}
+        {#if items.length > 0}
+          <button onclick={clearAllItems} class="btn-icon text-red-400" title={$t('list.clear.items')}>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
           </button>
         {/if}
       </div>
@@ -396,7 +420,9 @@
               {:else}
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-2">
-                    <span class="text-gray-300 drag-handle text-lg">&#x2630;</span>
+                    <span class="text-gray-400 drag-handle" aria-label="Drag category">
+                      <span class="drag-dots"><span></span><span></span><span></span><span></span><span></span><span></span></span>
+                    </span>
                     {cat.name}
                     <span class="text-gray-300 font-normal text-xs">({(itemGroups[cat.id]||[]).length})</span>
                   </h3>
@@ -483,13 +509,23 @@
   {#if showAutoSort}
     <AutoSortDialog listId={params.id} categories={sortedCats} onApply={handleAutoSortApplied} onClose={() => showAutoSort = false} />
   {/if}
+  {#if showRecipe}
+    <RecipeDialog
+      listId={params.id}
+      itemsOnList={items.map(i => i.name)}
+      onClose={() => showRecipe = false}
+      onItemsAdded={() => { /* backend broadcasts new items via WS, no-op */ }}
+    />
+  {/if}
 {/if}
 
 <!-- Shared item row snippet -->
 {#snippet itemRow(item)}
-  <div class="card mb-2 flex items-center gap-0 py-2 {item.checked ? 'opacity-60' : ''}" style="border-left: 4px solid {item.added_by_color}">
-    <!-- Drag handle: far left, ONLY element that triggers DnD -->
-    <span class="text-gray-300 drag-handle text-lg flex-shrink-0" aria-label="Drag">&#x2630;</span>
+  <div class="card mb-2 flex items-center gap-2 py-2 {item.checked ? 'opacity-60' : ''}" style="border-left: 4px solid {item.added_by_color}">
+    <!-- Drag handle: far left, ONLY element that triggers DnD. Generous tap area. -->
+    <span class="text-gray-400 drag-handle flex-shrink-0" aria-label="Drag">
+      <span class="drag-dots"><span></span><span></span><span></span><span></span><span></span><span></span></span>
+    </span>
     <!-- All other content: interactive but won't trigger drag -->
     <div class="flex items-center gap-2 flex-1 min-w-0">
       <button onclick={() => toggleCheck(item)} class="flex-shrink-0">

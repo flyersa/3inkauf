@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.core.deps import get_current_user
 from app.config import get_settings
+from app.core import runtime_config
 from app.models.user import User
 from app.services.ml_service import ml_service
 
@@ -14,11 +15,11 @@ router = APIRouter(prefix="/voice", tags=["voice"])
 
 
 class VoiceContext(BaseModel):
-    route: str = "unknown"           # "list_overview" | "list" | "bonus_cards" | ...
+    route: str = "unknown"
     list_id: Optional[str] = None
     list_name: Optional[str] = None
-    items: list[str] = []            # item names currently on the list (for fuzzy match)
-    locale: str = "en"               # "de" | "en"
+    items: list[str] = []
+    locale: str = "en"
 
 
 class VoiceIntentRequest(BaseModel):
@@ -46,7 +47,7 @@ async def parse_voice_intent(
             transcript=transcript,
             context=req.context.model_dump(),
             ollama_url=settings.ollama_url,
-            ollama_model=settings.ollama_model,
+            ollama_model=runtime_config.get_audio_model(),
         )
     except Exception as e:
         logger.exception("Voice intent parsing failed")

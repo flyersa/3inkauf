@@ -3,6 +3,7 @@
   import { t } from '../lib/i18n.js';
   import { api } from '../lib/api.js';
   import { showToast } from '../lib/store.js';
+  import Spinner from './Spinner.svelte';
 
   let { listId, categories = [], onApply, onClose } = $props();
 
@@ -62,9 +63,8 @@
     <p class="text-sm text-gray-500 mb-4">{$t('sort.auto.description')}</p>
 
     {#if loading}
-      <div class="text-center py-8 text-gray-400">
-        <div class="animate-spin inline-block w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mb-2"></div>
-        <div>{$t('sort.auto.loading')}</div>
+      <div class="text-center py-8 text-purple-500">
+        <Spinner size="md" label={$t('sort.auto.loading')} />
       </div>
     {:else if error}
       <div class="text-center py-8 text-gray-400">{error}</div>

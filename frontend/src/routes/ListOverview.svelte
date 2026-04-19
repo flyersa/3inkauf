@@ -6,6 +6,7 @@
   import { user, showToast, voiceContext } from '../lib/store.js';
   import { push } from 'svelte-spa-router';
   import Navbar from '../components/Navbar.svelte';
+  import Spinner from '../components/Spinner.svelte';
 
   voiceContext.set({ route: 'list_overview', list_id: null, list_name: null, items: [], items_full: [] });
 
@@ -90,11 +91,9 @@
   }
 
   function startScan() {
-    const name = newListName.trim();
-    if (!name) {
-      showToast($t('scan.name.required'), 'error');
-      return;
-    }
+    // Title is now collected in the preview modal after the scan. If the user
+    // already typed one into the top field, prefill it — otherwise leave empty.
+    const prefilledName = newListName.trim();
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -123,7 +122,7 @@
           categories: data.categories || [],
           items: (data.items || []).map(it => ({ ...it, include: true })),
         };
-        scanListName = name;
+        scanListName = prefilledName;
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
@@ -284,9 +283,9 @@
 {#if scanning && !scanResult}
   <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" role="status">
     <div class="bg-white rounded-xl p-6 max-w-xs text-center space-y-3">
-      <svg class="h-8 w-8 mx-auto animate-spin text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
-      </svg>
+      <div class="text-blue-500 flex justify-center">
+        <Spinner size="lg" />
+      </div>
       <div class="text-sm text-gray-600">{$t('scan.processing')}</div>
     </div>
   </div>
@@ -299,12 +298,18 @@
         <h2 class="text-lg font-bold">{$t('scan.preview.title')}</h2>
         <button onclick={cancelScan} class="btn-icon" aria-label={$t('btn.close')}>&times;</button>
       </div>
-      <div class="px-5 text-xs text-gray-500 flex items-center gap-3 pb-2">
-        <span>{scanListName}</span>
-        <span class="ml-auto flex gap-2">
+      <div class="px-5 pb-2">
+        <input
+          type="text"
+          bind:value={scanListName}
+          placeholder={$t('scan.name.placeholder')}
+          class="input-field w-full text-sm"
+          autofocus
+        />
+        <div class="flex items-center justify-end gap-2 mt-2 text-xs text-gray-500">
           <button onclick={() => toggleAllItems(true)} class="underline hover:text-gray-700">{$t('scan.all')}</button>
           <button onclick={() => toggleAllItems(false)} class="underline hover:text-gray-700">{$t('scan.none')}</button>
-        </span>
+        </div>
       </div>
       <div class="flex-1 overflow-y-auto px-5 py-2">
         {#if scanResult.items.length === 0}
@@ -332,7 +337,7 @@
         <button onclick={cancelScan} class="flex-1 py-2 rounded-lg border border-gray-200 text-sm">{$t('btn.cancel')}</button>
         <button
           onclick={saveScan}
-          disabled={savingScan || scanResult.items.filter(it => it.include).length === 0}
+          disabled={savingScan || !scanListName.trim() || scanResult.items.filter(it => it.include).length === 0}
           class="flex-1 btn-primary text-sm"
         >{savingScan ? '…' : $t('scan.save')}</button>
       </div>

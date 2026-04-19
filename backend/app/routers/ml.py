@@ -4,6 +4,7 @@ from sqlmodel import select
 
 from app.database import get_session
 from app.config import get_settings
+from app.core import runtime_config
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.list_item import ListItem
@@ -60,7 +61,7 @@ async def auto_sort(
         assignments = ml_service.auto_sort_advanced(
             item_dicts, cat_dicts, hints=hints,
             ollama_url=settings.ollama_url,
-            ollama_model=settings.ollama_model,
+            ollama_model=runtime_config.get_model(),
         )
     else:
         assignments = ml_service.auto_sort_simple(item_dicts, cat_dicts, hints=hints)

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 
 from app.core.deps import get_current_user
 from app.config import get_settings
+from app.core import runtime_config
 from app.models.user import User
 from app.services.ml_service import ml_service
 
@@ -37,7 +38,7 @@ async def scan_list_from_photo(
             content,
             language=language,
             ollama_url=settings.ollama_url,
-            ollama_model=settings.ollama_model,
+            ollama_model=runtime_config.get_ocr_model(),
         )
     except Exception as e:
         logger.exception("Scan failed")

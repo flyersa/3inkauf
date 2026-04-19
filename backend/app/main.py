@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.core.security import decode_token
 from app.core.websocket import manager
-from app.routers import auth, lists, categories, items, sharing, ml, images, bonus_cards, lists_scan, voice
+from app.routers import auth, lists, categories, items, sharing, ml, images, bonus_cards, lists_scan, voice, admin, recipes
 from app.services.ml_service import ml_service
 
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +63,8 @@ app.include_router(images.router, prefix="/api/v1")
 app.include_router(bonus_cards.router, prefix="/api/v1")
 app.include_router(lists_scan.router, prefix="/api/v1")
 app.include_router(voice.router, prefix="/api/v1")
+app.include_router(recipes.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health")
