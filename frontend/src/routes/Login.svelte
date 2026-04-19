@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte';
   import { t, locale, availableLocales } from '../lib/i18n.js';
   import { login, setRememberMe } from '../lib/auth.js';
   import { push } from 'svelte-spa-router';
@@ -9,6 +10,20 @@
   let rememberMe = $state(true);
   let loading = $state(false);
   let error = $state('');
+  // Hide signup link when the admin has disabled self-registration. Default
+  // to true so a blip in the /config fetch never silently hides the link on
+  // a fresh install.
+  let registrationEnabled = $state(true);
+
+  onMount(async () => {
+    try {
+      const r = await fetch('/api/v1/config');
+      if (r.ok) {
+        const cfg = await r.json();
+        registrationEnabled = cfg.registration_enabled !== false;
+      }
+    } catch { /* network hiccup — keep the default */ }
+  });
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -59,9 +74,11 @@
 
       <div class="text-center text-sm space-y-2">
         <a href="#/forgot-password" class="text-blue-500 hover:underline block">{$t('auth.forgot')}</a>
-        <p class="text-gray-500">
-          {$t('auth.no.account')} <a href="#/register" class="text-blue-500 hover:underline">{$t('auth.register')}</a>
-        </p>
+        {#if registrationEnabled}
+          <p class="text-gray-500">
+            {$t('auth.no.account')} <a href="#/register" class="text-blue-500 hover:underline">{$t('auth.register')}</a>
+          </p>
+        {/if}
       </div>
     </form>
 

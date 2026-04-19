@@ -2,16 +2,18 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import init_db
+from app.core import feature_flags
 from app.core.ratelimit import limiter
 from app.core.security import decode_token
 from app.core.websocket import manager
+from app.database import get_session, init_db
 from app.routers import auth, lists, categories, items, sharing, ml, images, bonus_cards, lists_scan, voice, admin, recipes
 from app.services.ml_service import ml_service
 
@@ -90,6 +92,15 @@ async def health():
         "model_loaded": ml_service.model is not None,
         "ollama_enabled": bool(settings.ollama_url),
     }
+
+
+@app.get("/api/v1/config")
+async def public_config(session: AsyncSession = Depends(get_session)):
+    """Public, unauthenticated config the login/register pages need to render
+    correctly (e.g. whether self-registration is enabled). Keep this surface
+    minimal — every field here is effectively world-readable."""
+    reg = await feature_flags.get_bool(session, "registration_enabled", True)
+    return {"registration_enabled": reg}
 
 
 @app.websocket("/ws/lists/{list_id}")

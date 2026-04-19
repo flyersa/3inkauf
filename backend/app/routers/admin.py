@@ -11,8 +11,9 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import delete, func, select
 
-from app.core import runtime_config
+from app.core import feature_flags, runtime_config
 from app.core.admin_auth import get_admin
+from app.core.palette import random_user_color
 from app.core.security import hash_password
 from app.core.websocket import manager as ws_manager
 from app.database import get_session
@@ -64,6 +65,21 @@ class ResetPasswordRequest(BaseModel):
     send_email: bool = False
 
 
+class AdminCreateUserRequest(BaseModel):
+    email: EmailStr
+    display_name: str
+    locale: str = "de"
+    # If omitted, admin.py generates a strong random password.
+    password: Optional[str] = None
+    send_welcome_email: bool = True
+
+
+class FeatureFlagsRequest(BaseModel):
+    # Only the keys provided in the request body are changed. None means leave
+    # the current value alone.
+    registration_enabled: Optional[bool] = None
+
+
 def _serialize_user(u: User) -> dict:
     return {
         "id": u.id,
@@ -81,6 +97,59 @@ def _serialize_user(u: User) -> dict:
 async def list_users(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(User).order_by(User.created_at.desc()))).scalars().all()
     return [_serialize_user(u) for u in rows]
+
+
+@router.post("/users", status_code=201)
+async def admin_create_user(
+    req: AdminCreateUserRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a user bypassing self-registration. Useful when the
+    ``registration_enabled`` flag is off (admins can still onboard people
+    manually). Optionally mails the credentials to the new user."""
+    email = req.email.lower().strip()
+    existing = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    name = (req.display_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="display_name must not be empty")
+
+    password = (req.password or "").strip() or _generate_password()
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    user = User(
+        email=email,
+        password_hash=hash_password(password),
+        display_name=name,
+        locale=(req.locale or "de").strip() or "de",
+        color=random_user_color(),
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    email_sent = False
+    email_error: Optional[str] = None
+    if req.send_welcome_email:
+        try:
+            await _send_admin_welcome_email(user.email, password, user.locale or "de")
+            email_sent = True
+        except Exception as e:
+            email_error = str(e)
+            logger.exception("Admin create-user welcome email failed")
+
+    return {
+        "user": _serialize_user(user),
+        # Always show the password to the admin so they can hand it over
+        # manually if email delivery failed.
+        "password": password,
+        "email_requested": req.send_welcome_email,
+        "email_sent": email_sent,
+        "email_error": email_error,
+    }
 
 
 @router.get("/users/{user_id}")
@@ -167,6 +236,80 @@ def _generate_password(length: int = 14) -> str:
             return pw
     # Fallback — extremely unlikely to reach this
     return pw
+
+
+async def _send_admin_welcome_email(email: str, password: str, locale: str) -> None:
+    import aiosmtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not settings.smtp_host or not settings.smtp_user:
+        raise RuntimeError("SMTP not configured")
+
+    base = settings.base_url.rstrip("/")
+    is_de = locale.startswith("de") if locale else True
+
+    if is_de:
+        subject = "Willkommen bei 3inkauf"
+        html = f"""
+        <html><body style="font-family: sans-serif; padding: 20px; max-width: 640px;">
+          <h2>Willkommen bei 3inkauf!</h2>
+          <p>Ein Administrator hat für dich ein Konto angelegt.</p>
+          <p><strong>Anmeldedaten:</strong></p>
+          <ul>
+            <li>E-Mail: <code>{_esc(email)}</code></li>
+            <li>Passwort: <code style="background:#f4f4f4;padding:2px 6px;border-radius:4px;">{_esc(password)}</code></li>
+          </ul>
+          <p><a href="{_esc(base)}/" style="background:#ea580c;color:white;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block;">Zur App &rarr;</a></p>
+          <p style="color:#666; margin-top:20px;">Bitte melde dich an und ändere dein Passwort sofort in den Einstellungen.</p>
+        </body></html>
+        """
+    else:
+        subject = "Welcome to 3inkauf"
+        html = f"""
+        <html><body style="font-family: sans-serif; padding: 20px; max-width: 640px;">
+          <h2>Welcome to 3inkauf!</h2>
+          <p>An administrator has created an account for you.</p>
+          <p><strong>Login details:</strong></p>
+          <ul>
+            <li>Email: <code>{_esc(email)}</code></li>
+            <li>Password: <code style="background:#f4f4f4;padding:2px 6px;border-radius:4px;">{_esc(password)}</code></li>
+          </ul>
+          <p><a href="{_esc(base)}/" style="background:#ea580c;color:white;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block;">Open the app &rarr;</a></p>
+          <p style="color:#666; margin-top:20px;">Please sign in and change your password immediately in Settings.</p>
+        </body></html>
+        """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.smtp_sender
+    msg["To"] = email
+    msg.attach(MIMEText(html, "html"))
+
+    await aiosmtplib.send(
+        msg,
+        hostname=settings.smtp_host,
+        port=settings.smtp_port,
+        username=settings.smtp_user,
+        password=settings.smtp_password,
+        start_tls=True,
+        timeout=15,
+    )
+
+
+def _esc(s) -> str:
+    if s is None:
+        return ""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 async def _send_admin_password_email(email: str, new_password: str, locale: str) -> None:
@@ -439,3 +582,25 @@ async def set_runtime_config(req: ModelOverrideRequest):
 async def clear_runtime_config():
     runtime_config.clear_overrides()
     return runtime_config.get_state()
+
+
+# ---------- Persistent feature flags ----------
+
+@router.get("/feature-flags")
+async def get_feature_flags(session: AsyncSession = Depends(get_session)):
+    """Persistent flags — survive backend restarts (stored in SQLite)."""
+    raw = await feature_flags.get_all(session)
+    # Normalise booleans in the response so the UI doesn't have to parse strings.
+    return {
+        "registration_enabled": str(raw.get("registration_enabled", "true")).lower() == "true",
+    }
+
+
+@router.patch("/feature-flags")
+async def patch_feature_flags(
+    req: FeatureFlagsRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    if req.registration_enabled is not None:
+        await feature_flags.set_bool(session, "registration_enabled", req.registration_enabled)
+    return await get_feature_flags(session)

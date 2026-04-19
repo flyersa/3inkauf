@@ -11,6 +11,39 @@
   let saving = $state(false);
   let wipingHints = $state(false);
 
+  // Password change
+  let currentPassword = $state('');
+  let newPassword = $state('');
+  let confirmPassword = $state('');
+  let changingPassword = $state(false);
+
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      showToast($t('auth.password.mismatch'), 'error');
+      return;
+    }
+    if (newPassword.length < 8) {
+      showToast($t('auth.password.too.short'), 'error');
+      return;
+    }
+    changingPassword = true;
+    try {
+      await api.post('/auth/me/password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      currentPassword = '';
+      newPassword = '';
+      confirmPassword = '';
+      showToast($t('auth.password.changed'), 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      changingPassword = false;
+    }
+  }
+
   onMount(async () => {
     try {
       const profile = await getProfile();
@@ -105,6 +138,28 @@
       {saving ? '...' : $t('btn.save')}
     </button>
   </form>
+
+  <!-- Change password -->
+  <div class="mt-8 pt-6 border-t border-gray-200">
+    <h2 class="text-sm font-semibold text-gray-600 mb-3">{$t('settings.password.title')}</h2>
+    <form onsubmit={handleChangePassword} class="space-y-3">
+      <div>
+        <label for="cur-pw" class="block text-sm text-gray-700 mb-1">{$t('auth.password.current')}</label>
+        <input id="cur-pw" type="password" autocomplete="current-password" bind:value={currentPassword} class="input-field" />
+      </div>
+      <div>
+        <label for="new-pw" class="block text-sm text-gray-700 mb-1">{$t('auth.password.new')}</label>
+        <input id="new-pw" type="password" autocomplete="new-password" bind:value={newPassword} minlength="8" class="input-field" />
+      </div>
+      <div>
+        <label for="new-pw2" class="block text-sm text-gray-700 mb-1">{$t('auth.password.confirm.new')}</label>
+        <input id="new-pw2" type="password" autocomplete="new-password" bind:value={confirmPassword} minlength="8" class="input-field" />
+      </div>
+      <button type="submit" disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword} class="btn-primary w-full">
+        {changingPassword ? '...' : $t('auth.password.change')}
+      </button>
+    </form>
+  </div>
 
   <!-- AI Hints -->
   <div class="mt-8 pt-6 border-t border-gray-200">

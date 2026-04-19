@@ -65,9 +65,39 @@
   let stats = $state(null);
   async function loadStats() { stats = await api('GET', '/stats'); }
 
+  // ---------- Feature flags (persistent) ----------
+  let flags = $state(null);
+  async function loadFlags() { flags = await api('GET', '/feature-flags'); }
+  async function toggleRegistration(enabled) {
+    busy = true;
+    try {
+      flags = await api('PATCH', '/feature-flags', { registration_enabled: enabled });
+    } catch (e) { err(e); }
+    finally { busy = false; }
+  }
+
   // ---------- Users ----------
   let users = $state([]);
   async function loadUsers() { users = await api('GET', '/users'); }
+
+  let showAddUser = $state(false);
+  let newUser = $state({ email: '', display_name: '', locale: 'de', send_welcome_email: true });
+  let addUserResult = $state(null);
+  async function createUser() {
+    busy = true;
+    try {
+      addUserResult = await api('POST', '/users', {
+        email: newUser.email.trim(),
+        display_name: newUser.display_name.trim(),
+        locale: newUser.locale,
+        send_welcome_email: newUser.send_welcome_email,
+      });
+      users = [addUserResult.user, ...users];
+      showAddUser = false;
+      newUser = { email: '', display_name: '', locale: 'de', send_welcome_email: true };
+    } catch (e) { err(e); }
+    finally { busy = false; }
+  }
 
   let editUser = $state(null);
   async function saveUser() {
@@ -205,13 +235,14 @@
 
   async function refreshAll() {
     try {
-      await Promise.all([loadStats(), loadUsers(), loadLists(), loadRuntime()]);
+      await Promise.all([loadStats(), loadUsers(), loadLists(), loadRuntime(), loadFlags()]);
     } catch (e) { err(e); }
   }
 
   $effect(() => {
     if (tab === 'stats' && loggedIn && !stats) loadStats().catch(err);
     if (tab === 'users' && loggedIn && !users.length) loadUsers().catch(err);
+    if (tab === 'users' && loggedIn && flags === null) loadFlags().catch(err);
     if (tab === 'lists' && loggedIn && !lists.length) loadLists().catch(err);
     if (tab === 'runtime' && loggedIn && !runtimeCfg) loadRuntime().catch(err);
   });
@@ -283,6 +314,23 @@
       {/if}
 
       {#if tab === 'users'}
+        <div class="bg-white rounded-xl shadow p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
+          <label class="flex items-center gap-3 text-sm">
+            <input type="checkbox"
+              checked={flags?.registration_enabled ?? true}
+              disabled={!flags || busy}
+              onchange={(e) => toggleRegistration(e.currentTarget.checked)}
+              class="h-4 w-4" />
+            <span>
+              <span class="font-medium">User self-registration</span>
+              <span class="block text-xs text-gray-500">
+                {flags?.registration_enabled ? 'Enabled — anyone can sign up at /register.' : 'Disabled — only admins can create users.'}
+              </span>
+            </span>
+          </label>
+          <button onclick={() => { showAddUser = true; }} class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium">+ Add user</button>
+        </div>
+
         <div class="bg-white rounded-xl shadow overflow-hidden">
           <table class="w-full text-sm">
             <thead class="bg-gray-50 text-left">
@@ -521,6 +569,55 @@
           {/if}
           <div class="flex justify-end pt-2">
             <button onclick={() => resetResult = null} class="px-3 py-2 bg-blue-600 text-white rounded">Close</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if showAddUser}
+      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full space-y-3">
+          <h2 class="text-lg font-bold">Add user</h2>
+          <p class="text-sm text-gray-600">A strong random password will be generated. You can choose to email it to the user.</p>
+          <label class="block"><span class="text-sm font-medium">Email</span>
+            <input bind:value={newUser.email} type="email" class="mt-1 w-full rounded border-gray-300 px-3 py-2 border" placeholder="user@example.com" /></label>
+          <label class="block"><span class="text-sm font-medium">Display name</span>
+            <input bind:value={newUser.display_name} class="mt-1 w-full rounded border-gray-300 px-3 py-2 border" /></label>
+          <label class="block"><span class="text-sm font-medium">Locale</span>
+            <select bind:value={newUser.locale} class="mt-1 w-full rounded border-gray-300 px-3 py-2 border">
+              <option value="de">de</option><option value="en">en</option>
+            </select></label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" bind:checked={newUser.send_welcome_email} />
+            Send welcome email with login credentials
+          </label>
+          <div class="flex justify-end gap-2 pt-2">
+            <button onclick={() => showAddUser = false} class="px-3 py-2 rounded border">Cancel</button>
+            <button onclick={createUser}
+              disabled={busy || !newUser.email.trim() || !newUser.display_name.trim()}
+              class="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50">Create</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if addUserResult}
+      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full space-y-3">
+          <h2 class="text-lg font-bold">Created {addUserResult.user.email}</h2>
+          <div class="bg-gray-100 p-3 rounded font-mono text-lg break-all select-all">{addUserResult.password}</div>
+          <button onclick={() => navigator.clipboard?.writeText(addUserResult.password)} class="text-sm text-blue-600 hover:underline">Copy password to clipboard</button>
+          {#if addUserResult.email_requested}
+            {#if addUserResult.email_sent}
+              <p class="text-sm text-green-700">✓ Welcome email sent.</p>
+            {:else}
+              <p class="text-sm text-red-700">✗ Email delivery failed{addUserResult.email_error ? `: ${addUserResult.email_error}` : ''}. Hand the password over manually.</p>
+            {/if}
+          {:else}
+            <p class="text-sm text-gray-600">No email sent — hand the password to the user manually.</p>
+          {/if}
+          <div class="flex justify-end pt-2">
+            <button onclick={() => addUserResult = null} class="px-3 py-2 bg-blue-600 text-white rounded">Close</button>
           </div>
         </div>
       </div>

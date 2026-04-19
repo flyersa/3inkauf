@@ -10,6 +10,9 @@ from app.core.security import (
     generate_reset_token, hash_reset_token,
     decode_token,
 )
+from pydantic import BaseModel, Field
+
+from app.core import feature_flags
 from app.core.deps import get_current_user
 from app.core.ratelimit import limiter
 from app.models.user import User, PasswordResetToken
@@ -28,6 +31,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("6/minute")
 async def register(request: Request, req: RegisterRequest, session: AsyncSession = Depends(get_session)):
+    # Admin can toggle self-registration off from the admin UI.
+    if not await feature_flags.get_bool(session, "registration_enabled", True):
+        raise HTTPException(
+            status_code=403,
+            detail="User registration is currently disabled. Please ask an administrator to create an account for you.",
+        )
+
     # Check if email already exists
     result = await session.execute(select(User).where(User.email == req.email))
     if result.scalar_one_or_none():
@@ -179,3 +189,31 @@ async def wipe_all_hints(
         await session.delete(hint)
     await session.commit()
     return {"message": f"Deleted {count} hints", "deleted": count}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/me/password")
+@limiter.limit("10/hour")
+async def change_password(
+    request: Request,
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Change the authenticated user's own password. Requires the current
+    password to be supplied so a stolen-session attacker can't silently
+    hijack the account."""
+    if not verify_password(req.current_password, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if req.new_password == req.current_password:
+        raise HTTPException(status_code=400, detail="New password must differ from current password")
+
+    current_user.password_hash = hash_password(req.new_password)
+    current_user.updated_at = datetime.now(timezone.utc)
+    session.add(current_user)
+    await session.commit()
+    return {"message": "Password changed"}

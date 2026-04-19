@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte';
   import { t, locale, availableLocales } from '../lib/i18n.js';
   import { register } from '../lib/auth.js';
   import { push } from 'svelte-spa-router';
@@ -9,6 +10,18 @@
   let displayName = $state('');
   let loading = $state(false);
   let error = $state('');
+  // null = still checking, true = open, false = closed
+  let registrationEnabled = $state(null);
+
+  onMount(async () => {
+    try {
+      const r = await fetch('/api/v1/config');
+      const cfg = r.ok ? await r.json() : { registration_enabled: true };
+      registrationEnabled = cfg.registration_enabled !== false;
+    } catch {
+      registrationEnabled = true; // fail-open if /config is unreachable
+    }
+  });
 
   async function handleRegister(e) {
     e.preventDefault();
@@ -37,6 +50,16 @@
       <p class="text-gray-500 text-sm mt-1">{$t('auth.register')}</p>
     </div>
 
+    {#if registrationEnabled === false}
+      <div class="text-center space-y-4 py-4">
+        <div class="bg-amber-50 border border-amber-200 text-amber-900 text-sm p-3 rounded-lg">
+          {$t('auth.register.disabled')}
+        </div>
+        <a href="#/login" class="btn-primary inline-block">{$t('auth.login')}</a>
+      </div>
+    {:else if registrationEnabled === null}
+      <p class="text-center text-gray-400 text-sm py-4">...</p>
+    {:else}
     <form onsubmit={handleRegister} class="space-y-4">
       {#if error}
         <div class="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>
@@ -72,5 +95,6 @@
         </p>
       </div>
     </form>
+    {/if}
   </div>
 </div>
