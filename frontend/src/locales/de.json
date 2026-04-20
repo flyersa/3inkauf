@@ -157,5 +157,22 @@
   "recipe.full.emailing": "Wird gesendet…",
   "recipe.full.emailed": "Rezept per E-Mail gesendet",
   "recipe.full.email_error": "E-Mail konnte nicht gesendet werden",
-  "recipe.full.back": "Zurück zu den Vorschlägen"
+  "recipe.full.back": "Zurück zu den Vorschlägen",
+  "settings.delete.title": "Konto löschen",
+  "settings.delete.description": "Deine Listen, Artikel, Kundenkarten und Freigaben werden unwiderruflich gelöscht. Freigaben, die du für andere erstellt hast, werden ebenfalls entfernt.",
+  "settings.delete.button": "Konto löschen …",
+  "settings.delete.confirm.title": "Konto wirklich löschen?",
+  "settings.delete.confirm.warning": "Das kann nicht rückgängig gemacht werden. Folgendes wird entfernt:",
+  "settings.delete.confirm.bullet.lists": "Alle deine Einkaufslisten, Artikel und Kategorien",
+  "settings.delete.confirm.bullet.shares": "Freigaben, die du an andere Nutzer vergeben hast (sie verlieren den Zugriff)",
+  "settings.delete.confirm.bullet.cards": "Deine Bonus-/Kundenkarten",
+  "settings.delete.confirm.bullet.photos": "Alle hochgeladenen Fotos",
+  "settings.delete.confirm.question": "Möchtest du wirklich fortfahren?",
+  "settings.delete.confirm.yes": "Ja, Bestätigungscode senden",
+  "settings.delete.code.title": "Bestätigungscode eingeben",
+  "settings.delete.code.instruction": "Wir haben einen 6-stelligen Code an deine E-Mail-Adresse geschickt. Gib ihn hier ein, um die Kontolöschung abzuschließen. Der Code ist 15 Minuten gültig.",
+  "settings.delete.code.sent": "Bestätigungscode per E-Mail gesendet",
+  "settings.delete.code.invalid": "Bitte den 6-stelligen Code eingeben",
+  "settings.delete.code.submit": "Konto endgültig löschen",
+  "settings.delete.code.resend": "Neuen Code anfordern"
 }

@@ -227,12 +227,24 @@ async def reorder_items(
 ):
     await get_list_with_access(list_id, current_user, session, require_edit=True)
 
-    for i, iid in enumerate(req.item_ids):
-        result = await session.execute(
-            select(ListItem).where(ListItem.id == iid, ListItem.list_id == list_id)
+    # Empty array = no-op. Skip DB + broadcast entirely. (Client now guards
+    # this too, but belt-and-suspenders since the old frontend fired empty
+    # reorder calls on source zones that emptied out.)
+    if not req.item_ids:
+        return await get_items_enriched(list_id, session)
+
+    # ONE SELECT covers every id; previously this did N sequential SELECTs
+    # which on the 2 GB dev VM put /reorder at ~500-700 ms for modest lists.
+    result = await session.execute(
+        select(ListItem).where(
+            ListItem.id.in_(req.item_ids),
+            ListItem.list_id == list_id,
         )
-        item = result.scalar_one_or_none()
-        if item:
+    )
+    items_map = {it.id: it for it in result.scalars()}
+    for i, iid in enumerate(req.item_ids):
+        item = items_map.get(iid)
+        if item is not None:
             item.sort_order = (i + 1) * 10
             session.add(item)
 

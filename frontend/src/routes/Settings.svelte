@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { t, locale, availableLocales } from '../lib/i18n.js';
-  import { getProfile, updateProfile } from '../lib/auth.js';
+  import { getProfile, updateProfile, logout } from '../lib/auth.js';
   import { api } from '../lib/api.js';
   import { user, showToast } from '../lib/store.js';
   import Navbar from '../components/Navbar.svelte';
@@ -16,6 +16,64 @@
   let newPassword = $state('');
   let confirmPassword = $state('');
   let changingPassword = $state(false);
+
+  // Account deletion — 'idle' → 'confirming' → 'awaiting_code'
+  let deleteState = $state('idle');
+  let deleteCode = $state('');
+  let deletePassword = $state('');
+  let sendingDeleteRequest = $state(false);
+  let confirmingDelete = $state(false);
+
+  function startDeleteFlow() {
+    deleteState = 'confirming';
+  }
+
+  async function requestDeleteCode() {
+    if (confirmingDelete) return;
+    sendingDeleteRequest = true;
+    try {
+      await api.post('/auth/me/delete/request', {});
+      deleteState = 'awaiting_code';
+      deleteCode = '';
+      deletePassword = '';
+      showToast($t('settings.delete.code.sent'), 'success');
+    } catch (err) {
+      showToast(err.message || $t('error.generic'), 'error');
+      deleteState = 'idle';
+    } finally {
+      sendingDeleteRequest = false;
+    }
+  }
+
+  async function confirmDelete() {
+    const code = (deleteCode || '').trim();
+    const password = deletePassword || '';
+    if (!/^\d{6}$/.test(code)) {
+      showToast($t('settings.delete.code.invalid'), 'error');
+      return;
+    }
+    if (!password) {
+      showToast($t('auth.password.current'), 'error');
+      return;
+    }
+    confirmingDelete = true;
+    try {
+      await api.post('/auth/me/delete/confirm', { code, current_password: password });
+      // Tokens are now useless — force logout + redirect to login.
+      try { logout(); } catch (_) { window.location.hash = '#/login'; }
+    } catch (err) {
+      showToast(err.message || $t('error.generic'), 'error');
+    } finally {
+      confirmingDelete = false;
+      deletePassword = '';
+    }
+  }
+
+  function cancelDelete() {
+    deleteState = 'idle';
+    deleteCode = '';
+    deletePassword = '';
+  }
 
   async function handleChangePassword(e) {
     e.preventDefault();
@@ -169,4 +227,75 @@
       {wipingHints ? '...' : $t('settings.hints.wipe')}
     </button>
   </div>
+
+  <!-- Delete account -->
+  <div class="mt-8 pt-6 border-t border-red-200">
+    <h2 class="text-sm font-semibold text-red-600 mb-2">{$t('settings.delete.title')}</h2>
+    <p class="text-xs text-gray-500 mb-3">{$t('settings.delete.description')}</p>
+    <button onclick={startDeleteFlow} class="btn-danger">
+      {$t('settings.delete.button')}
+    </button>
+  </div>
 </main>
+
+<!-- Delete account: confirmation dialog -->
+{#if deleteState === 'confirming'}
+  <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" role="dialog" onclick={cancelDelete}>
+    <div class="bg-white rounded-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+      <h3 class="text-lg font-bold text-red-600 mb-3">{$t('settings.delete.confirm.title')}</h3>
+      <p class="text-sm text-gray-700 mb-2">{$t('settings.delete.confirm.warning')}</p>
+      <ul class="text-xs text-gray-500 mb-4 list-disc pl-5 space-y-1">
+        <li>{$t('settings.delete.confirm.bullet.lists')}</li>
+        <li>{$t('settings.delete.confirm.bullet.shares')}</li>
+        <li>{$t('settings.delete.confirm.bullet.cards')}</li>
+        <li>{$t('settings.delete.confirm.bullet.photos')}</li>
+      </ul>
+      <p class="text-sm font-medium text-gray-700 mb-4">{$t('settings.delete.confirm.question')}</p>
+      <div class="flex gap-2">
+        <button onclick={cancelDelete} class="btn-secondary flex-1">{$t('btn.cancel')}</button>
+        <button onclick={requestDeleteCode} disabled={sendingDeleteRequest} class="btn-danger flex-1">
+          {sendingDeleteRequest ? '...' : $t('settings.delete.confirm.yes')}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Delete account: enter code dialog -->
+{#if deleteState === 'awaiting_code'}
+  <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" role="dialog">
+    <div class="bg-white rounded-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-bold text-red-600 mb-3">{$t('settings.delete.code.title')}</h3>
+      <p class="text-sm text-gray-700 mb-4">{$t('settings.delete.code.instruction')}</p>
+      <label for="del-code" class="block text-xs text-gray-500 mb-1">{$t('settings.delete.code.title')}</label>
+      <input
+        id="del-code"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]{'{6}'}"
+        maxlength="6"
+        autocomplete="one-time-code"
+        bind:value={deleteCode}
+        class="input-field text-center text-2xl tracking-[0.5em] font-mono mb-4"
+        placeholder="______"
+      />
+      <label for="del-pw" class="block text-xs text-gray-500 mb-1">{$t('auth.password.current')}</label>
+      <input
+        id="del-pw"
+        type="password"
+        autocomplete="current-password"
+        bind:value={deletePassword}
+        class="input-field mb-4"
+      />
+      <div class="flex gap-2">
+        <button onclick={cancelDelete} class="btn-secondary flex-1">{$t('btn.cancel')}</button>
+        <button onclick={confirmDelete} disabled={confirmingDelete || deleteCode.length !== 6 || !deletePassword} class="btn-danger flex-1">
+          {confirmingDelete ? '...' : $t('settings.delete.code.submit')}
+        </button>
+      </div>
+      <button onclick={requestDeleteCode} disabled={sendingDeleteRequest || confirmingDelete} class="w-full mt-3 text-xs text-gray-500 underline disabled:opacity-50">
+        {sendingDeleteRequest ? '...' : $t('settings.delete.code.resend')}
+      </button>
+    </div>
+  </div>
+{/if}

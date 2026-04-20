@@ -157,5 +157,22 @@
   "recipe.full.emailing": "Sending…",
   "recipe.full.emailed": "Recipe emailed",
   "recipe.full.email_error": "Email delivery failed",
-  "recipe.full.back": "Back to suggestions"
+  "recipe.full.back": "Back to suggestions",
+  "settings.delete.title": "Delete account",
+  "settings.delete.description": "Your lists, items, loyalty cards and shares will be permanently deleted. Shares you granted to others are also removed.",
+  "settings.delete.button": "Delete account …",
+  "settings.delete.confirm.title": "Really delete your account?",
+  "settings.delete.confirm.warning": "This cannot be undone. The following will be removed:",
+  "settings.delete.confirm.bullet.lists": "All your shopping lists, items and categories",
+  "settings.delete.confirm.bullet.shares": "Shares you granted to other users (they lose access)",
+  "settings.delete.confirm.bullet.cards": "Your bonus / loyalty cards",
+  "settings.delete.confirm.bullet.photos": "All uploaded photos",
+  "settings.delete.confirm.question": "Do you really want to continue?",
+  "settings.delete.confirm.yes": "Yes, send confirmation code",
+  "settings.delete.code.title": "Enter confirmation code",
+  "settings.delete.code.instruction": "We sent a 6-digit code to your email address. Enter it here to complete account deletion. The code is valid for 15 minutes.",
+  "settings.delete.code.sent": "Confirmation code sent by email",
+  "settings.delete.code.invalid": "Please enter the 6-digit code",
+  "settings.delete.code.submit": "Permanently delete account",
+  "settings.delete.code.resend": "Request new code"
 }

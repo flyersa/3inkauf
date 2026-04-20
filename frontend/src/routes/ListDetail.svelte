@@ -55,6 +55,19 @@
   let sortedCats = $state([]);
   let itemGroups = $state({});
   let uncatItems = $state([]);
+  // 'item' while an item drag is in progress, 'category' during category drag,
+  // null otherwise. Used to light up ONLY the relevant drop zones.
+  let draggingType = $state(null);
+
+  // WS-echo suppression during drag. Every finalize handler bumps the counter
+  // before awaiting its PATCHes and decrements in finally; a 1.2s grace period
+  // after the last op prevents the server's echo broadcasts from stomping on
+  // the optimistic state and causing items to vanish / duplicate.
+  let dragInFlight = $state(0);
+  let dropGraceUntil = 0;
+  function wsSkipItemEcho() {
+    return dragInFlight > 0 || Date.now() < dropGraceUntil;
+  }
 
   const flipDurationMs = 120;
 
@@ -104,6 +117,10 @@
         rebuildGroups();
         break;
       case 'item_updated':
+        // Skip echoes of our own drag PATCHes — our optimistic state is
+        // authoritative during + 1.2s after the drop, so replaying the
+        // server's pre-reorder snapshot would revert category/sort changes.
+        if (wsSkipItemEcho()) break;
         items = items.map(i => i.id === msg.item.id ? msg.item : i);
         rebuildGroups();
         break;
@@ -120,6 +137,7 @@
         rebuildGroups();
         break;
       case 'items_reordered': {
+        if (wsSkipItemEcho()) break;
         const m = {}; msg.item_ids.forEach((id, idx) => { m[id] = (idx+1)*10; });
         items = items.map(i => m[i.id] !== undefined ? { ...i, sort_order: m[i.id] } : i).sort((a,b) => a.sort_order - b.sort_order);
         break;
@@ -139,8 +157,12 @@
   }
 
   // === Category DnD ===
-  function handleCatConsider(e) { sortedCats = e.detail.items; }
+  function handleCatConsider(e) {
+    draggingType = 'category';
+    sortedCats = e.detail.items;
+  }
   async function handleCatFinalize(e) {
+    draggingType = null;
     sortedCats = e.detail.items;
     categories = sortedCats.map((c, i) => ({ ...c, sort_order: (i+1)*10 }));
     try { await api.patch('/lists/' + params.id + '/categories/reorder', { category_ids: sortedCats.map(c => c.id) }); }
@@ -148,33 +170,60 @@
   }
 
   // === Item DnD ===
-  function handleItemConsider(catId, e) { itemGroups[catId] = e.detail.items; }
-  async function handleItemFinalize(catId, e) {
-    snapshotCategoryMap();
-    const grp = e.detail.items; itemGroups[catId] = grp;
-    const all = [];
-    for (const cat of sortedCats) { const g = cat.id === catId ? grp : (itemGroups[cat.id]||[]); g.forEach((it,i) => all.push({...it, category_id: cat.id, sort_order:(i+1)*10})); }
-    uncatItems.forEach((it,i) => all.push({...it, category_id: null, sort_order:(i+1)*10}));
-    items = all;
-    try {
-      for (const item of grp) { if (originalCategoryMap[item.id] !== catId) await api.patch('/lists/'+params.id+'/items/'+item.id, { category_id: catId||'' }); }
-      await api.patch('/lists/'+params.id+'/items/reorder', { item_ids: grp.map(i=>i.id) });
-    } catch (err) { showToast(err.message, 'error'); }
-    snapshotCategoryMap();
+  function handleItemConsider(catId, e) {
+    draggingType = 'item';
+    itemGroups[catId] = e.detail.items;
   }
-  function handleUncatConsider(e) { uncatItems = e.detail.items; }
-  async function handleUncatFinalize(e) {
-    snapshotCategoryMap();
-    const grp = e.detail.items; uncatItems = grp;
-    const all = [];
-    for (const cat of sortedCats) { (itemGroups[cat.id]||[]).forEach((it,i) => all.push({...it, category_id: cat.id, sort_order:(i+1)*10})); }
-    grp.forEach((it,i) => all.push({...it, category_id: null, sort_order:(i+1)*10}));
-    items = all;
+  async function handleItemFinalize(catId, e) {
+    draggingType = null;
+    dragInFlight++;
     try {
-      for (const item of grp) { if (originalCategoryMap[item.id]) await api.patch('/lists/'+params.id+'/items/'+item.id, { category_id: '' }); }
-      await api.patch('/lists/'+params.id+'/items/reorder', { item_ids: grp.map(i=>i.id) });
-    } catch (err) { showToast(err.message, 'error'); }
-    snapshotCategoryMap();
+      snapshotCategoryMap();
+      const grp = e.detail.items; itemGroups[catId] = grp;
+      const all = [];
+      for (const cat of sortedCats) { const g = cat.id === catId ? grp : (itemGroups[cat.id]||[]); g.forEach((it,i) => all.push({...it, category_id: cat.id, sort_order:(i+1)*10})); }
+      uncatItems.forEach((it,i) => all.push({...it, category_id: null, sort_order:(i+1)*10}));
+      items = all;
+      try {
+        for (const item of grp) { if (originalCategoryMap[item.id] !== catId) await api.patch('/lists/'+params.id+'/items/'+item.id, { category_id: catId||'' }); }
+        // Skip no-op reorder on an empty zone (happens when a drag leaves
+        // a zone that had one item — source finalize fires with grp = []).
+        if (grp.length > 0) {
+          await api.patch('/lists/'+params.id+'/items/reorder', { item_ids: grp.map(i=>i.id) });
+        }
+      } catch (err) { showToast(err.message, 'error'); }
+      snapshotCategoryMap();
+    } finally {
+      dragInFlight = Math.max(0, dragInFlight - 1);
+      if (dragInFlight === 0) dropGraceUntil = Date.now() + 1200;
+    }
+  }
+
+  function handleUncatConsider(e) {
+    draggingType = 'item';
+    uncatItems = e.detail.items;
+  }
+  async function handleUncatFinalize(e) {
+    draggingType = null;
+    dragInFlight++;
+    try {
+      snapshotCategoryMap();
+      const grp = e.detail.items; uncatItems = grp;
+      const all = [];
+      for (const cat of sortedCats) { (itemGroups[cat.id]||[]).forEach((it,i) => all.push({...it, category_id: cat.id, sort_order:(i+1)*10})); }
+      grp.forEach((it,i) => all.push({...it, category_id: null, sort_order:(i+1)*10}));
+      items = all;
+      try {
+        for (const item of grp) { if (originalCategoryMap[item.id]) await api.patch('/lists/'+params.id+'/items/'+item.id, { category_id: '' }); }
+        if (grp.length > 0) {
+          await api.patch('/lists/'+params.id+'/items/reorder', { item_ids: grp.map(i=>i.id) });
+        }
+      } catch (err) { showToast(err.message, 'error'); }
+      snapshotCategoryMap();
+    } finally {
+      dragInFlight = Math.max(0, dragInFlight - 1);
+      if (dragInFlight === 0) dropGraceUntil = Date.now() + 1200;
+    }
   }
 
   // === Actions ===
@@ -448,7 +497,7 @@
     {#if uncatItems.length > 0}
       <div class="mb-4">
         <h3 class="text-sm font-semibold text-gray-400 italic mb-2 px-1">{$t('item.uncategorized')}</h3>
-        <div use:dndHandleOnly use:dndzone={{ items: uncatItems, flipDurationMs, type: 'items' }} onconsider={(e) => handleUncatConsider(e)} onfinalize={(e) => handleUncatFinalize(e)} class="min-h-[2.5rem]">
+        <div use:dndHandleOnly use:dndzone={{ items: uncatItems, flipDurationMs, type: 'items' }} onconsider={(e) => handleUncatConsider(e)} onfinalize={(e) => handleUncatFinalize(e)} class="min-h-[2.5rem] rounded-lg transition-colors" class:drop-zone-item-active={draggingType === 'item'}>
           {#each uncatItems as item (item.id)}
             {@render itemRow(item)}
           {/each}
@@ -458,7 +507,7 @@
 
     <!-- Categories -->
     {#if sortedCats.length > 0}
-      <div use:dndHandleOnly use:dndzone={{ items: sortedCats, flipDurationMs, type: 'categories' }} onconsider={(e) => handleCatConsider(e)} onfinalize={(e) => handleCatFinalize(e)} class="space-y-4">
+      <div use:dndHandleOnly use:dndzone={{ items: sortedCats, flipDurationMs, type: 'categories' }} onconsider={(e) => handleCatConsider(e)} onfinalize={(e) => handleCatFinalize(e)} class="space-y-4 rounded-lg transition-colors" class:drop-zone-cat-active={draggingType === 'category'}>
         {#each sortedCats as cat (cat.id)}
           <div class="bg-gray-50 rounded-xl p-3 border border-gray-100">
             <div>
@@ -490,7 +539,7 @@
                 </div>
               {/if}
 
-              <div use:dndHandleOnly use:dndzone={{ items: itemGroups[cat.id]||[], flipDurationMs, type: 'items' }} onconsider={(e) => handleItemConsider(cat.id, e)} onfinalize={(e) => handleItemFinalize(cat.id, e)} class="min-h-[2.5rem]">
+              <div use:dndHandleOnly use:dndzone={{ items: itemGroups[cat.id]||[], flipDurationMs, type: 'items' }} onconsider={(e) => handleItemConsider(cat.id, e)} onfinalize={(e) => handleItemFinalize(cat.id, e)} class="min-h-[2.5rem] rounded-lg transition-colors" class:drop-zone-item-active={draggingType === 'item'}>
                 {#each (itemGroups[cat.id]||[]) as item (item.id)}
                   {@render itemRow(item)}
                 {/each}
@@ -611,3 +660,24 @@
     </div>
   </div>
 {/snippet}
+
+
+<style>
+  /* Drop-zone highlighting. We fill the zone with a light-green wash so users
+     can see WHERE they can drop while dragging. Item zones and category zones
+     only light up for their own drag type — dragging an item never highlights
+     the outer category-sort zone, and vice versa. The :has() selector pumps
+     up the green on the zone currently under the pointer so users know which
+     specific slot is the target. */
+  .drop-zone-item-active,
+  .drop-zone-cat-active {
+    background: rgba(74, 222, 128, 0.18);          /* tailwind green-400 @ 18% */
+    outline: 2px dashed rgba(34, 197, 94, 0.55);   /* tailwind green-500 */
+    outline-offset: -2px;
+  }
+  .drop-zone-item-active:has([data-is-dnd-shadow-item-internal="true"]),
+  .drop-zone-cat-active:has([data-is-dnd-shadow-item-internal="true"]) {
+    background: rgba(34, 197, 94, 0.32);
+    outline-color: rgba(22, 163, 74, 0.85);        /* tailwind green-600 */
+  }
+</style>
