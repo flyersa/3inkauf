@@ -37,8 +37,10 @@ async function request(path, options = {}) {
     const refreshToken = getRefreshToken();
     if (refreshToken && !options._retried) {
       try {
-        const refreshRes = await fetch(`${BASE}/auth/refresh?token=${encodeURIComponent(refreshToken)}`, {
+        const refreshRes = await fetch(`${BASE}/auth/refresh`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: refreshToken }),
         });
         if (refreshRes.ok) {
           const data = await refreshRes.json();

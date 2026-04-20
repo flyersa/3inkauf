@@ -99,10 +99,20 @@ async def login(request: Request, req: LoginRequest, session: AsyncSession = Dep
     )
 
 
+class RefreshRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
+
+
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(token: str, session: AsyncSession = Depends(get_session)):
+async def refresh_token(
+    req: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Refresh with the token supplied in the JSON body. Previously accepted
+    as a URL query parameter, which leaked into nginx access logs, Referer
+    headers, browser history and error-logging pipelines."""
     try:
-        payload = decode_token(token)
+        payload = decode_token(req.token)
         if payload.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="Invalid token type")
         user_id = payload.get("sub")

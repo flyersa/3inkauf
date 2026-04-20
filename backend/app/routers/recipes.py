@@ -58,7 +58,9 @@ class RecipeEmailRequest(BaseModel):
 
 
 @router.post("/lists/{list_id}/recipes/from-items")
+@limiter.limit("40/hour")
 async def recipes_from_items(
+    request: Request,
     list_id: str,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -94,7 +96,9 @@ async def recipes_from_items(
 
 
 @router.post("/recipes/from-query")
+@limiter.limit("40/hour")
 async def recipe_from_query(
+    request: Request,
     req: RecipeFromQueryRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -120,7 +124,9 @@ async def recipe_from_query(
 
 
 @router.post("/recipes/full")
+@limiter.limit("40/hour")
 async def full_recipe(
+    request: Request,
     req: FullRecipeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -146,7 +152,7 @@ async def full_recipe(
 
 
 @router.post("/recipes/email")
-@limiter.limit("20/hour")
+@limiter.limit("40/hour")
 async def email_recipe(
     request: Request,
     req: RecipeEmailRequest,

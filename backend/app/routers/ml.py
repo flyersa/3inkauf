@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -6,6 +6,7 @@ from app.database import get_session
 from app.config import get_settings
 from app.core import runtime_config
 from app.core.deps import get_current_user
+from app.core.ratelimit import limiter
 from app.models.user import User
 from app.models.list_item import ListItem
 from app.models.category import Category
@@ -18,7 +19,9 @@ router = APIRouter(prefix="/lists/{list_id}", tags=["ml"])
 
 
 @router.post("/auto-sort", response_model=AutoSortResponse)
+@limiter.limit("40/hour")
 async def auto_sort(
+    request: Request,
     list_id: str,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -81,7 +84,9 @@ async def auto_sort(
 
 
 @router.post("/auto-sort/apply")
+@limiter.limit("40/hour")
 async def apply_auto_sort(
+    request: Request,
     list_id: str,
     req: ApplyAutoSortRequest,
     current_user: User = Depends(get_current_user),

@@ -1,13 +1,14 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, func
 
 from app.config import get_settings
 from app.core import runtime_config
 from app.core.deps import get_current_user
+from app.core.ratelimit import limiter
 from app.core.websocket import manager
 from app.database import get_session
 from app.models.user import User
@@ -135,7 +136,9 @@ async def create_item(
 
 # /from-photo stays LITERAL (not a path-param) so it must be declared before /{item_id}.
 @router.post("/from-photo", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("40/hour")
 async def create_item_from_photo(
+    request: Request,
     list_id: str,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),

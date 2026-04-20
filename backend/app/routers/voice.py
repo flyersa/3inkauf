@@ -1,9 +1,10 @@
 import logging
 from typing import Optional, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.deps import get_current_user
+from app.core.ratelimit import limiter
 from app.config import get_settings
 from app.core import runtime_config
 from app.models.user import User
@@ -28,7 +29,9 @@ class VoiceIntentRequest(BaseModel):
 
 
 @router.post("/intent")
+@limiter.limit("30/minute")
 async def parse_voice_intent(
+    request: Request,
     req: VoiceIntentRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
