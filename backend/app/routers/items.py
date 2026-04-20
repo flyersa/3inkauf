@@ -106,11 +106,18 @@ async def create_item(
             detail=f"'{req.name}' is already on this list",
         )
 
+    # New items go to the TOP of their bucket (uncategorized or the picked
+    # category). With many existing items the old behavior (append to bottom)
+    # made the new one easy to miss. Pick a sort_order strictly less than
+    # the current minimum in the bucket.
     result = await session.execute(
-        select(ListItem.sort_order).where(ListItem.list_id == list_id)
-        .order_by(ListItem.sort_order.desc()).limit(1)
+        select(func.min(ListItem.sort_order)).where(
+            ListItem.list_id == list_id,
+            ListItem.category_id == req.category_id,
+        )
     )
-    max_order = result.scalar() or 0
+    current_min = result.scalar()
+    new_sort_order = (current_min - 10) if current_min is not None else 10
 
     item = ListItem(
         list_id=list_id,
@@ -118,7 +125,7 @@ async def create_item(
         name=req.name,
         quantity=req.quantity,
         category_id=req.category_id,
-        sort_order=max_order + 10,
+        sort_order=new_sort_order,
     )
     session.add(item)
     await session.commit()
@@ -186,11 +193,15 @@ async def create_item_from_photo(
     if dupe.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"'{name}' is already on this list")
 
+    # Same top-of-bucket placement as manual create_item.
     result = await session.execute(
-        select(ListItem.sort_order).where(ListItem.list_id == list_id)
-        .order_by(ListItem.sort_order.desc()).limit(1)
+        select(func.min(ListItem.sort_order)).where(
+            ListItem.list_id == list_id,
+            ListItem.category_id == None,
+        )
     )
-    max_order = result.scalar() or 0
+    current_min = result.scalar()
+    new_sort_order = (current_min - 10) if current_min is not None else 10
 
     # Persist the user's photo as the item's image so the list shows the exact
     # snapshot they took. Same storage as the manual photo-attach endpoint.
@@ -204,7 +215,7 @@ async def create_item_from_photo(
         name=name,
         quantity=qty,
         category_id=None,
-        sort_order=max_order + 10,
+        sort_order=new_sort_order,
         image_path=image_id,
     )
     session.add(item)

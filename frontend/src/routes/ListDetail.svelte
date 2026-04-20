@@ -271,6 +271,7 @@
     try {
       const item = await api.post('/lists/'+params.id+'/items', { name: newItemName.trim(), quantity: newItemQty.trim()||null });
       items = [...items, item]; rebuildGroups(); snapshotCategoryMap(); newItemName = ''; newItemQty = '';
+      showToast($t('item.added').replace('{name}', item.name), 'success');
     } catch (err) { showToast(err.message, 'error'); } finally { addingItem = false; }
   }
   async function toggleCheck(item) {

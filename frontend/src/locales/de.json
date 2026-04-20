@@ -174,5 +174,6 @@
   "settings.delete.code.sent": "Bestätigungscode per E-Mail gesendet",
   "settings.delete.code.invalid": "Bitte den 6-stelligen Code eingeben",
   "settings.delete.code.submit": "Konto endgültig löschen",
-  "settings.delete.code.resend": "Neuen Code anfordern"
+  "settings.delete.code.resend": "Neuen Code anfordern",
+  "item.added": "{name} hinzugefügt"
 }

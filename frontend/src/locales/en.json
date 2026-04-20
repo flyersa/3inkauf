@@ -174,5 +174,6 @@
   "settings.delete.code.sent": "Confirmation code sent by email",
   "settings.delete.code.invalid": "Please enter the 6-digit code",
   "settings.delete.code.submit": "Permanently delete account",
-  "settings.delete.code.resend": "Request new code"
+  "settings.delete.code.resend": "Request new code",
+  "item.added": "{name} added"
 }
