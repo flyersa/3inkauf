@@ -175,5 +175,9 @@
   "settings.delete.code.invalid": "Please enter the 6-digit code",
   "settings.delete.code.submit": "Permanently delete account",
   "settings.delete.code.resend": "Request new code",
-  "item.added": "{name} added"
+  "item.added": "{name} added",
+  "list.create.title": "Create a new list",
+  "list.create.submit": "Create",
+  "scan.button.label": "Scan list",
+  "fridge.button.label": "Fridge AI"
 }

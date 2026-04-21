@@ -16,6 +16,22 @@
   let creating = $state(false);
   let ollamaEnabled = $state(false);
 
+  // Create-list dialog (replaces the old inline input next to the button).
+  let showNewListDialog = $state(false);
+  let newListInput = $state(null);
+
+  function openNewListDialog() {
+    newListName = '';
+    showNewListDialog = true;
+    // Autofocus the input after the modal renders.
+    setTimeout(() => { try { newListInput?.focus(); } catch (_) {} }, 0);
+  }
+
+  function closeNewListDialog() {
+    showNewListDialog = false;
+    newListName = '';
+  }
+
   // Scan flow state
   let scanning = $state(false);
   let scanResult = $state(null); // { categories: [], items: [{name, quantity, category, include}] }
@@ -47,6 +63,7 @@
       const newList = await api.post('/lists', { name: newListName.trim() });
       lists = [newList, ...lists];
       newListName = '';
+      showNewListDialog = false;
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -95,9 +112,8 @@
 
   function startScan(mode = 'ocr') {
     scanMode = mode;
-    // Title is collected in the preview modal after the scan. If the user
-    // already typed one into the top field, prefill it — otherwise leave empty.
-    const prefilledName = newListName.trim();
+    // Title is collected in the preview modal after the scan. The old inline
+    // input is gone; we always ask the user in the preview modal after OCR.
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -132,8 +148,7 @@
             include: scanMode === 'fridge' ? (it.confidence !== 'low') : true,
           })),
         };
-        // Default fridge-scan title if user hasn't typed one.
-        scanListName = prefilledName || (scanMode === 'fridge' ? ($t('fridge.default.name') || 'Kühlschrank') : '');
+        scanListName = scanMode === 'fridge' ? ($t('fridge.default.name') || 'Kühlschrank') : '';
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
@@ -188,7 +203,6 @@
       lists = [list, ...lists];
       scanResult = null;
       scanListName = '';
-      newListName = '';
       showToast($t('scan.saved'), 'success');
       push('/list/' + list.id);
     } catch (err) {
@@ -222,71 +236,76 @@
 <Navbar />
 
 <main class="max-w-lg mx-auto px-4 py-6">
-  <form onsubmit={createList} class="flex gap-2 mb-6">
-    <input
-      type="text"
-      bind:value={newListName}
-      placeholder={$t('list.new.placeholder')}
-      class="input-field flex-1"
-    />
-    <button type="submit" disabled={creating} class="btn-primary whitespace-nowrap">
+  <!-- Action row: primary "Create list" on its own, scan buttons labelled below.
+       The old inline "name next to button" UX was confusing; asking for the name
+       in a dialog is one extra tap but the intent is much clearer. -->
+  <div class="space-y-2 mb-6">
+    <button
+      type="button"
+      onclick={openNewListDialog}
+      class="btn-primary w-full py-3 text-base"
+    >
       + {$t('list.new')}
     </button>
     {#if ollamaEnabled}
-      <button
-        type="button"
-        onclick={() => startScan('ocr')}
-        disabled={scanning}
-        class="btn-icon border border-gray-200 rounded-lg px-3"
-        title={$t('scan.tooltip')}
-        aria-label={$t('scan.tooltip')}
-      >
-        {#if scanning && scanMode === 'ocr'}
-          <svg class="h-5 w-5 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
-          </svg>
-        {:else}
-          <svg class="h-5 w-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
-            <circle cx="12" cy="13" r="4" />
-          </svg>
-        {/if}
-      </button>
-      <button
-        type="button"
-        onclick={() => startScan('fridge')}
-        disabled={scanning}
-        class="btn-icon border border-gray-200 rounded-lg px-3"
-        title={$t('fridge.tooltip')}
-        aria-label={$t('fridge.tooltip')}
-      >
-        {#if scanning && scanMode === 'fridge'}
-          <svg class="h-5 w-5 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
-          </svg>
-        {:else}
-          <svg class="h-5 w-5 text-cyan-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="2" width="14" height="20" rx="2" />
-            <line x1="5" y1="10" x2="19" y2="10" />
-            <line x1="8" y1="6" x2="8" y2="7" />
-            <line x1="8" y1="14" x2="8" y2="15" />
-          </svg>
-        {/if}
-      </button>
+      <div class="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onclick={() => startScan('ocr')}
+          disabled={scanning}
+          class="flex items-center justify-center gap-2 px-3 py-3 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 text-sm font-medium"
+          title={$t('scan.tooltip')}
+        >
+          {#if scanning && scanMode === 'ocr'}
+            <svg class="h-5 w-5 animate-spin text-gray-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
+            </svg>
+          {:else}
+            <svg class="h-5 w-5 text-gray-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+          {/if}
+          <span>{$t('scan.button.label')}</span>
+        </button>
+        <button
+          type="button"
+          onclick={() => startScan('fridge')}
+          disabled={scanning}
+          class="flex items-center justify-center gap-2 px-3 py-3 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 text-sm font-medium"
+          title={$t('fridge.tooltip')}
+        >
+          {#if scanning && scanMode === 'fridge'}
+            <svg class="h-5 w-5 animate-spin text-gray-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 11-9-9" stroke-linecap="round" />
+            </svg>
+          {:else}
+            <svg class="h-5 w-5 text-cyan-600 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" />
+              <line x1="5" y1="10" x2="19" y2="10" />
+              <line x1="8" y1="6" x2="8" y2="7" />
+              <line x1="8" y1="14" x2="8" y2="15" />
+            </svg>
+          {/if}
+          <span>{$t('fridge.button.label')}</span>
+        </button>
+      </div>
     {/if}
-  </form>
+  </div>
 
   {#if loading}
     <div class="text-center text-gray-400 py-12">Loading...</div>
   {:else if lists.length === 0}
     <div class="text-center text-gray-400 py-12">{$t('list.empty')}</div>
   {:else}
+    <!-- List cards are intentionally chunky: most users hold 2-4 lists, and
+         the bigger tap target fills the screen nicely on mobile. -->
     <div class="space-y-3">
       {#each lists as list (list.id)}
-        <div class="card flex items-center justify-between">
+        <div class="card p-5 flex items-center justify-between">
           <button onclick={() => push(`/list/${list.id}`)} class="flex-1 text-left">
-            <div class="font-medium text-gray-900">{list.name}</div>
-            <div class="text-xs text-gray-400 mt-0.5">
+            <div class="text-lg font-semibold text-gray-900">{list.name}</div>
+            <div class="text-sm text-gray-400 mt-1">
               {list.item_count || 0} {$t('list.items')}
               {#if !list.is_owner}
                 <span class="ml-2 text-blue-400">({$t('list.shared.with.you')})</span>
@@ -294,14 +313,14 @@
             </div>
           </button>
           {#if list.is_owner}
-            <button onclick={() => deleteList(list.id)} class="btn-icon text-red-400 hover:text-red-600 ml-2" title={$t('btn.delete')}>
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <button onclick={() => deleteList(list.id)} class="btn-icon text-red-400 hover:text-red-600 ml-2 p-2" title={$t('btn.delete')}>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
             </button>
           {:else}
-            <button onclick={() => leaveList(list.id)} class="btn-icon text-gray-400 hover:text-red-500 ml-2" title={$t('list.leave')}>
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <button onclick={() => leaveList(list.id)} class="btn-icon text-gray-400 hover:text-red-500 ml-2 p-2" title={$t('list.leave')}>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clip-rule="evenodd" />
               </svg>
             </button>
@@ -311,6 +330,39 @@
     </div>
   {/if}
 </main>
+
+<!-- New-list dialog — replaces the old inline name input. -->
+{#if showNewListDialog}
+  <div
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+    role="dialog"
+    onclick={closeNewListDialog}
+  >
+    <div class="bg-white rounded-2xl w-full max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+      <h2 class="text-lg font-bold mb-3">{$t('list.create.title')}</h2>
+      <form onsubmit={createList}>
+        <input
+          bind:this={newListInput}
+          type="text"
+          bind:value={newListName}
+          placeholder={$t('list.new.placeholder')}
+          class="input-field w-full mb-4"
+          autofocus
+        />
+        <div class="flex gap-2">
+          <button type="button" onclick={closeNewListDialog} class="btn-secondary flex-1">{$t('btn.cancel')}</button>
+          <button
+            type="submit"
+            disabled={creating || !newListName.trim()}
+            class="btn-primary flex-1"
+          >
+            {creating ? '…' : $t('list.create.submit')}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
 
 {#if scanning && !scanResult}
   <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" role="status">

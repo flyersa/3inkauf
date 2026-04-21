@@ -175,5 +175,9 @@
   "settings.delete.code.invalid": "Bitte den 6-stelligen Code eingeben",
   "settings.delete.code.submit": "Konto endgültig löschen",
   "settings.delete.code.resend": "Neuen Code anfordern",
-  "item.added": "{name} hinzugefügt"
+  "item.added": "{name} hinzugefügt",
+  "list.create.title": "Neue Liste erstellen",
+  "list.create.submit": "Erstellen",
+  "scan.button.label": "Liste Scannen",
+  "fridge.button.label": "Kühlschrank KI"
 }

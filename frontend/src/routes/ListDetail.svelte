@@ -142,7 +142,7 @@
         items = items.map(i => m[i.id] !== undefined ? { ...i, sort_order: m[i.id] } : i).sort((a,b) => a.sort_order - b.sort_order);
         break;
       }
-      case 'category_added': categories = [...categories, msg.category]; break;
+      case 'category_added': if (!categories.some(c => c.id === msg.category.id)) categories = [...categories, msg.category]; break;
       case 'category_updated': categories = categories.map(c => c.id === msg.category.id ? { ...c, ...msg.category } : c); break;
       case 'category_removed':
         categories = categories.filter(c => c.id !== msg.category_id);
@@ -270,7 +270,8 @@
     e.preventDefault(); if (!newItemName.trim()) return; addingItem = true;
     try {
       const item = await api.post('/lists/'+params.id+'/items', { name: newItemName.trim(), quantity: newItemQty.trim()||null });
-      items = [...items, item]; rebuildGroups(); snapshotCategoryMap(); newItemName = ''; newItemQty = '';
+      if (!items.some((i) => i.id === item.id)) items = [...items, item];
+      rebuildGroups(); snapshotCategoryMap(); newItemName = ''; newItemQty = '';
       showToast($t('item.added').replace('{name}', item.name), 'success');
     } catch (err) { showToast(err.message, 'error'); } finally { addingItem = false; }
   }
@@ -290,7 +291,7 @@
   function openAddCategory() { showAddCategory = true; newCatName = ''; setTimeout(() => catInput?.focus(), 50); }
   async function addCategory(e) {
     e.preventDefault(); if (!newCatName.trim()) return; addingCat = true;
-    try { const cat = await api.post('/lists/'+params.id+'/categories', { name: newCatName.trim() }); categories=[...categories,cat]; rebuildGroups(); newCatName=''; showAddCategory=false; }
+    try { const cat = await api.post('/lists/'+params.id+'/categories', { name: newCatName.trim() }); if (!categories.some(c => c.id === cat.id)) categories=[...categories,cat]; rebuildGroups(); newCatName=''; showAddCategory=false; }
     catch (err) { showToast(err.message, 'error'); } finally { addingCat = false; }
   }
   async function deleteCategory(catId) {

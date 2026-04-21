@@ -25,6 +25,22 @@ OLLAMA_SAMPLING = {
 OLLAMA_KEEP_ALIVE = "1h"
 
 
+# German umlaut fold used ONLY when feeding text into / matching text coming
+# back from the LLM. User-visible item names are NEVER mutated — the fold is
+# an internal alias so items like "Gummibären" aren't dropped just because
+# the model echoes back "Gummibaeren" (or vice versa) and the lookup misses.
+_UMLAUT_MAP = str.maketrans({
+    "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
+    "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+})
+
+
+def _umlaut_fold(s: str) -> str:
+    """Lossy ASCII-folding of German umlauts + sharp-s. Leaves every other
+    character untouched. Used as a matching key when talking to the LLM."""
+    return (s or "").translate(_UMLAUT_MAP)
+
+
 class MLService:
     def __init__(self):
         self.model = None
@@ -151,15 +167,25 @@ class MLService:
             else:
                 llm_items.append(item)
 
-        # Step 2: send remaining items to Ollama (chat API)
+        # Step 2: send remaining items to Ollama (chat API).
+        # Feed the model the umlaut-folded forms: some model families tokenise
+        # German diacritics weirdly and either silently drop items or echo a
+        # normalised spelling, which used to break our exact-string lookup
+        # (e.g. "Gummibären" submitted -> "Gummibaeren" in response -> no
+        # match -> item dropped from the proposal).
         if llm_items and ollama_url:
-            cat_names = [c["name"] for c in categories]
-            cat_map = {}
-            for c in categories:
-                cat_map[c["name"].lower().strip()] = c
+            # Two lookups per side: the folded key points back to the real
+            # record, whose original name keeps its umlauts for display.
+            cat_folded_names = [_umlaut_fold(c["name"]) for c in categories]
+            cat_map_folded = {
+                _umlaut_fold(c["name"]).lower().strip(): c for c in categories
+            }
+            item_lookup_folded = {
+                _umlaut_fold(i["name"]).lower().strip(): i for i in llm_items
+            }
 
-            item_names = [i["name"] for i in llm_items]
-            cat_list = "\n".join(f"- {c}" for c in cat_names)
+            item_names_folded = [_umlaut_fold(i["name"]) for i in llm_items]
+            cat_list = "\n".join(f"- {c}" for c in cat_folded_names)
 
             try:
                 resp = requests.post(
@@ -173,7 +199,7 @@ class MLService:
                             },
                             {
                                 "role": "user",
-                                "content": f"Sort these items into the categories below. Each item must be assigned to exactly one category. Use ONLY the exact category names provided.\n\nCATEGORIES:\n{cat_list}\n\nITEMS:\n{json.dumps(item_names)}\n\nReply: [{{\"item\": \"...\", \"category\": \"...\"}}]",
+                                "content": f"Sort these items into the categories below. Each item must be assigned to exactly one category. Use ONLY the exact category names provided.\n\nCATEGORIES:\n{cat_list}\n\nITEMS:\n{json.dumps(item_names_folded)}\n\nReply: [{{\"item\": \"...\", \"category\": \"...\"}}]",
                             },
                         ],
                         "stream": False,
@@ -186,23 +212,24 @@ class MLService:
                 resp.raise_for_status()
                 raw = resp.json().get("message", {}).get("content", "")
 
-                # Parse JSON array from response
+                # Parse JSON array from response. Fold both sides of the match
+                # so the lookup works whether the model echoes "Gummibären" or
+                # "Gummibaeren".
                 match = re.search(r'\[.*\]', raw, re.DOTALL)
                 if match:
                     result = json.loads(match.group())
-                    item_lookup = {i["name"].lower().strip(): i for i in llm_items}
 
                     for r in result:
-                        r_item = r.get("item", "").strip()
-                        r_cat = r.get("category", "").strip()
-                        item = item_lookup.get(r_item.lower().strip())
-                        cat = cat_map.get(r_cat.lower().strip())
+                        r_item = (r.get("item") or "").strip()
+                        r_cat = (r.get("category") or "").strip()
+                        item = item_lookup_folded.get(_umlaut_fold(r_item).lower().strip())
+                        cat = cat_map_folded.get(_umlaut_fold(r_cat).lower().strip())
                         if item and cat:
                             assignments.append({
                                 "item_id": item["id"],
-                                "item_name": item["name"],
+                                "item_name": item["name"],          # original spelling, umlauts intact
                                 "category_id": cat["id"],
-                                "category_name": cat["name"],
+                                "category_name": cat["name"],       # original spelling, umlauts intact
                                 "confidence": 0.90,
                             })
                 else:
